@@ -36,13 +36,13 @@ public class MemoryManager {
     private final ChunkingService chunker;
     private final HybridSearcher  searcher;
 
-    public Memory store(String content, String scope, List<String> tags) {
+    public Memory store(String content, List<String> tags) {
         String memId = UUID.randomUUID().toString();
-        List<Chunk> chunks = chunker.chunk(memId, scope, content);
+        List<Chunk> chunks = chunker.chunk(memId, null, content);
 
         List<ChunkWithVectors> withVecs = new ArrayList<>();
         for (Chunk chunk : chunks) {
-            Chunk enriched = enrich(chunk, scope, tags);
+            Chunk enriched = enrich(chunk, tags);
             float[] vec    = embedder.encodeSingle(enriched.getChunkText());
             withVecs.add(ChunkWithVectors.builder()
                     .chunk(enriched)
@@ -57,7 +57,6 @@ public class MemoryManager {
         Memory memory = Memory.builder()
                 .id(memId)
                 .content(content)
-                .scope(scope)
                 .importance(DEFAULT_IMPORTANCE)
                 .tags(tags)
                 .createdAt(Instant.now())
@@ -65,14 +64,13 @@ public class MemoryManager {
                 .accessCount(0)
                 .build();
 
-        log.info("记忆写入完成 id={}, scope={}, chunks={}", memId, scope, chunks.size());
+        log.info("记忆写入完成 id={}, chunks={}", memId, chunks.size());
         return memory;
     }
 
-    public List<SearchResult> recall(String query, String scope, int topK) {
-        Map<String, Object> filters = scope != null ? Map.of("scope", scope) : Map.of();
-        List<SearchResult> results  = searcher.search(query, topK, filters);
-        log.debug("记忆召回 query='{}', scope={}, hits={}", query, scope, results.size());
+    public List<SearchResult> recall(String query, int topK) {
+        List<SearchResult> results = searcher.search(query, topK, Map.of());
+        log.debug("记忆召回 query='{}', hits={}", query, results.size());
         return results;
     }
 
@@ -84,7 +82,7 @@ public class MemoryManager {
 
     // ----------------------------------------------------------------- private
 
-    private Chunk enrich(Chunk chunk, String scope, List<String> tags) {
+    private Chunk enrich(Chunk chunk, List<String> tags) {
         return Chunk.builder()
                 .chunkId(chunk.getChunkId())
                 .docId(chunk.getDocId())
@@ -94,7 +92,6 @@ public class MemoryManager {
                 .chunkIndex(chunk.getChunkIndex())
                 .language(chunk.getLanguage())
                 .tags(tags)
-                .scope(scope != null ? scope : "global")
                 .importance(DEFAULT_IMPORTANCE)
                 .updatedAt(Instant.now())
                 .build();

@@ -1,8 +1,5 @@
 package com.memo.docrank.langchain4j;
 
-import com.memo.docrank.core.model.Chunk;
-import com.memo.docrank.core.model.ChunkWithVectors;
-import com.memo.docrank.core.model.RecallCandidate;
 import com.memo.docrank.core.store.InMemoryBackend;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
@@ -28,7 +25,6 @@ class DocRankEmbeddingStoreTest {
         backend.createIndex();
         store = DocRankEmbeddingStore.builder()
                 .vectorBackend(backend)
-                .defaultScope("test")
                 .build();
     }
 
@@ -52,7 +48,6 @@ class DocRankEmbeddingStoreTest {
     void addWithTextSegment_preservesText() {
         Metadata meta = new Metadata();
         meta.put("title", "Spring Boot Guide");
-        meta.put("scope", "test");
         TextSegment segment = TextSegment.from("Spring Boot simplifies development", meta);
 
         String id = store.add(Embedding.from(vec(1f, 0f, 0f)), segment);
@@ -78,8 +73,8 @@ class DocRankEmbeddingStoreTest {
                 Embedding.from(vec(1f, 0f)),
                 Embedding.from(vec(0f, 1f))
         );
-        Metadata m1 = new Metadata(); m1.put("scope", "test");
-        Metadata m2 = new Metadata(); m2.put("scope", "test");
+        Metadata m1 = new Metadata();
+        Metadata m2 = new Metadata();
         List<TextSegment> segments = List.of(
                 TextSegment.from("text one", m1),
                 TextSegment.from("text two", m2)
@@ -109,7 +104,6 @@ class DocRankEmbeddingStoreTest {
     @Test
     void search_returnsRelevantResults() {
         Metadata meta = new Metadata();
-        meta.put("scope", "test");
         store.add(Embedding.from(vec(1f, 0f)), TextSegment.from("aligned document", meta));
         store.add(Embedding.from(vec(0f, 1f)), TextSegment.from("orthogonal document", meta));
 

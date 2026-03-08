@@ -44,7 +44,6 @@ public class LuceneBM25Index implements BM25Index {
     static final String F_LANGUAGE    = "language";
     static final String F_CHUNK_INDEX = "chunk_index";
     static final String F_UPDATED_AT  = "updated_at";
-    static final String F_SCOPE       = "scope";
     static final String F_IMPORTANCE  = "importance";
     static final String F_EXPIRES_AT  = "expires_at";
 
@@ -114,18 +113,6 @@ public class LuceneBM25Index implements BM25Index {
             log.debug("Lucene 删除 docId={}", docId);
         } catch (IOException e) {
             log.warn("Lucene 删除失败: {}", e.getMessage());
-        }
-    }
-
-    @Override
-    public void deleteByScope(String scope) {
-        try {
-            writer.deleteDocuments(new Term(F_SCOPE, scope));
-            writer.flush();
-            searcherManager.maybeRefresh();
-            log.info("Lucene scope '{}' 数据已清除", scope);
-        } catch (IOException e) {
-            log.warn("Lucene scope 删除失败: {}", e.getMessage());
         }
     }
 
@@ -219,9 +206,7 @@ public class LuceneBM25Index implements BM25Index {
         if (chunk.getUpdatedAt() != null)
             doc.add(new StoredField(F_UPDATED_AT, chunk.getUpdatedAt().toString()));
 
-        // Phase 1: scope / importance / expiresAt
-        String scope = chunk.getScope() != null ? chunk.getScope() : "global";
-        doc.add(new StringField(F_SCOPE, scope, Field.Store.YES));
+        // importance / expiresAt
         doc.add(new StoredField(F_IMPORTANCE, chunk.getImportance()));
         if (chunk.getExpiresAt() != null)
             doc.add(new StoredField(F_EXPIRES_AT, chunk.getExpiresAt().toString()));
@@ -286,7 +271,6 @@ public class LuceneBM25Index implements BM25Index {
                 .language(parseLanguage(doc.get(F_LANGUAGE)))
                 .tags(tags)
                 .updatedAt(updatedAt)
-                .scope(doc.get(F_SCOPE) != null ? doc.get(F_SCOPE) : "global")
                 .importance(importance)
                 .expiresAt(expiresAt)
                 .build();
@@ -317,17 +301,15 @@ public class LuceneBM25Index implements BM25Index {
         // 用户自定义 filters
         if (filters != null) {
             filters.forEach((field, value) -> {
-                // scope 使用专用字段名
-                String luceneField = "scope".equals(field) ? F_SCOPE : field;
                 if (value instanceof List<?> list) {
                     BooleanQuery.Builder orBuilder = new BooleanQuery.Builder();
                     list.forEach(v -> orBuilder.add(
-                            new TermQuery(new Term(luceneField, v.toString())),
+                            new TermQuery(new Term(field, v.toString())),
                             BooleanClause.Occur.SHOULD));
                     boolBuilder.add(orBuilder.build(), BooleanClause.Occur.FILTER);
                 } else {
                     boolBuilder.add(
-                            new TermQuery(new Term(luceneField, value.toString())),
+                            new TermQuery(new Term(field, value.toString())),
                             BooleanClause.Occur.FILTER);
                 }
             });

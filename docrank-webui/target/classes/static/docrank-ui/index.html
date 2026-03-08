@@ -90,9 +90,6 @@
                                class="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm
                                       focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent">
                     </div>
-                    <input x-model="search.scope" placeholder="scope（可选）"
-                           class="w-40 border border-slate-300 rounded-xl px-3 py-2.5 text-sm
-                                  focus:outline-none focus:ring-2 focus:ring-indigo-400">
                     <select x-model="search.topK"
                             class="border border-slate-300 rounded-xl px-3 py-2.5 text-sm bg-white
                                    focus:outline-none focus:ring-2 focus:ring-indigo-400">
@@ -167,18 +164,6 @@
                             <input x-model="ingest.title" placeholder="文档标题（可选）"
                                    class="input-field">
                         </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-600 mb-1.5">Scope</label>
-                                <input x-model="ingest.scope" placeholder="global"
-                                       class="input-field">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-600 mb-1.5">重要度 (0~1)</label>
-                                <input x-model="ingest.importance" type="number" min="0" max="1" step="0.1"
-                                       placeholder="1.0" class="input-field">
-                            </div>
-                        </div>
                         <div>
                             <label class="block text-xs font-medium text-slate-600 mb-1.5">
                                 标签 <span class="font-normal text-slate-400">（逗号分隔）</span>
@@ -206,15 +191,9 @@
                 <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                     <h2 class="text-base font-semibold text-slate-800 mb-5">📂 上传文件</h2>
                     <div class="space-y-4">
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-600 mb-1.5">Scope</label>
-                                <input x-model="upload.scope" placeholder="global" class="input-field">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-600 mb-1.5">标签</label>
-                                <input x-model="upload.tags" placeholder="文档, PDF" class="input-field">
-                            </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1.5">标签</label>
+                            <input x-model="upload.tags" placeholder="文档, PDF" class="input-field">
                         </div>
                         <div>
                             <label class="block text-xs font-medium text-slate-600 mb-1.5">选择文件</label>
@@ -279,31 +258,6 @@
                     </div>
                 </div>
 
-                <!-- GDPR delete by scope -->
-                <div class="bg-white border border-orange-200 rounded-2xl p-6 shadow-sm">
-                    <h2 class="text-base font-semibold text-slate-800 mb-1">⚠️ GDPR 批量清除</h2>
-                    <p class="text-xs text-slate-400 mb-5">按 scope 删除所有数据，此操作不可恢复</p>
-                    <div class="space-y-4">
-                        <input x-model="delScope.scope" placeholder="输入 scope…"
-                               class="w-full border border-orange-300 rounded-xl px-4 py-2.5 text-sm
-                                      focus:outline-none focus:ring-2 focus:ring-orange-400">
-                        <div x-show="delScope.scope"
-                             class="p-3 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-800">
-                            将删除 scope
-                            "<strong x-text="delScope.scope"></strong>"
-                            下的全部数据
-                        </div>
-                        <button @click="doDeleteScope()"
-                                :disabled="delScope.loading || !delScope.scope.trim()"
-                                class="w-full py-2.5 rounded-xl text-sm font-medium transition-colors
-                                       bg-orange-600 hover:bg-orange-700 text-white disabled:opacity-50">
-                            <span x-show="!delScope.loading">批量清除 Scope</span>
-                            <span x-show="delScope.loading">清除中…</span>
-                        </button>
-                        <div x-show="delScope.result" class="alert-success" x-text="delScope.result"></div>
-                        <div x-show="delScope.error"  class="alert-error"   x-text="delScope.error"></div>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -378,11 +332,10 @@
                 { k: 'OpenAPI',     v: '/swagger-ui.html', link: true },
             ],
 
-            search:   { query:'', scope:'', topK:'5', results:[], loading:false, error:'', done:false },
-            ingest:   { title:'', content:'', scope:'global', importance:'1.0', tags:'', loading:false, result:'', error:'' },
-            upload:   { file:null, scope:'global', tags:'', loading:false, result:'', error:'', dragging:false },
+            search:   { query:'', topK:'5', results:[], loading:false, error:'', done:false },
+            ingest:   { title:'', content:'', tags:'', loading:false, result:'', error:'' },
+            upload:   { file:null, tags:'', loading:false, result:'', error:'', dragging:false },
             del:      { docId:'', loading:false, result:'', error:'' },
-            delScope: { scope:'', loading:false, result:'', error:'' },
 
             async init() { await this.loadStats(); },
 
@@ -399,7 +352,6 @@
                 this.search.loading = true; this.search.error = ''; this.search.results = []; this.search.done = false;
                 try {
                     const body = { query: this.search.query, top_k: +this.search.topK };
-                    if (this.search.scope) body.scope = this.search.scope;
                     const r    = await fetch('/mcp/kb_search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
                     const data = await r.json();
                     if (data.success) this.search.results = data.data.results;
@@ -416,8 +368,6 @@
                     const body = {
                         content:    this.ingest.content,
                         title:      this.ingest.title,
-                        scope:      this.ingest.scope || 'global',
-                        importance: parseFloat(this.ingest.importance) || 1.0,
                         tags
                     };
                     const r    = await fetch('/mcp/kb_ingest', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
@@ -440,7 +390,6 @@
                 try {
                     const fd = new FormData();
                     fd.append('file', this.upload.file);
-                    fd.append('scope', this.upload.scope || 'global');
                     this.upload.tags.split(',').map(t=>t.trim()).filter(Boolean).forEach(t=>fd.append('tags',t));
                     const r    = await fetch('/mcp/kb_ingest_file', { method:'POST', body:fd });
                     const data = await r.json();
@@ -463,18 +412,6 @@
                     else this.del.error = data.error || '删除失败';
                 } catch(e) { this.del.error = '网络错误: ' + e.message; }
                 finally    { this.del.loading = false; }
-            },
-
-            async doDeleteScope() {
-                if (!this.delScope.scope.trim()) return;
-                this.delScope.loading = true; this.delScope.result = ''; this.delScope.error = '';
-                try {
-                    const r    = await fetch('/mcp/kb_delete_scope', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({scope:this.delScope.scope}) });
-                    const data = await r.json();
-                    if (data.success) { this.delScope.result = `✅ Scope "${this.delScope.scope}" 已清除`; this.delScope.scope = ''; await this.loadStats(); }
-                    else this.delScope.error = data.error || '清除失败';
-                } catch(e) { this.delScope.error = '网络错误: ' + e.message; }
-                finally    { this.delScope.loading = false; }
             },
         }
     }

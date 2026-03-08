@@ -9,7 +9,8 @@
       "Bash(ls:*)",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "Bash(mvn compile:*)"
+      "Bash(mvn compile:*)",
+      "Bash(mkdir:*)"
     ]
   }
 }

@@ -4,5 +4,7 @@ com\memo\docrank\memory\MemoryManager.class
 com\memo\docrank\memory\KnowledgeBaseService.class
 com\memo\docrank\memory\KnowledgeDocument.class
 com\memo\docrank\memory\IngestResult$IngestResultBuilder.class
+com\memo\docrank\memory\ReembedResult$ReembedResultBuilder.class
 com\memo\docrank\memory\KnowledgeDocument$KnowledgeDocumentBuilder.class
 com\memo\docrank\memory\Memory$MemoryBuilder.class
+com\memo\docrank\memory\ReembedResult.class

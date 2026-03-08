@@ -1,0 +1,13 @@
+# Git metadata
+.git
+
+# Maven build output
+**/target
+**/*.class
+
+# Documentation
+docs/
+*.md
+
+# Local model files (mounted as volume at runtime)
+models/

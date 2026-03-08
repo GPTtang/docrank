@@ -2,6 +2,7 @@ package com.memo.docrank.mcp;
 
 import com.memo.docrank.memory.IngestResult;
 import com.memo.docrank.memory.KnowledgeBaseService;
+import com.memo.docrank.memory.ReembedResult;
 import com.memo.docrank.core.model.SearchResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +48,6 @@ public class DocRankMcpServer {
                                 Map.of(
                                         "query", "string (required) — 自然语言查询，支持中/日/英",
                                         "top_k", "int (optional, default: 5) — 返回条数",
-                                        "scope", "string (optional) — 命名空间隔离，只搜索该 scope",
                                         "tags",  "array<string> (optional) — 按标签过滤")),
                         McpTool.of("kb_ingest",
                                 "将文本写入知识库，自动分块、向量化、建立 BM25 索引",
@@ -55,23 +55,21 @@ public class DocRankMcpServer {
                                         "content",    "string (required) — 要写入的文本内容",
                                         "title",      "string (optional) — 文档标题",
                                         "tags",       "array<string> (optional) — 标签，用于过滤",
-                                        "scope",      "string (optional, default: global) — 命名空间",
                                         "importance", "double (optional, 0.0~1.0, default: 1.0) — 重要度")),
                         McpTool.of("kb_ingest_file",
-                                "上传文件写入知识库（支持 PDF/Markdown/HTML/DOCX/TXT/JSON）",
+                                "上传文件写入知识库（支持 PDF/Markdown/HTML/DOCX/TXT/JSON/XLSX/PPTX/EPUB/CSV）",
                                 Map.of(
                                         "file",  "multipart file (required)",
-                                        "tags",  "array<string> (optional)",
-                                        "scope", "string (optional, default: global) — 命名空间")),
+                                        "tags",  "array<string> (optional)")),
                         McpTool.of("kb_delete",
                                 "从知识库删除文档（按 doc_id）",
                                 Map.of("doc_id", "string (required) — 文档 ID")),
-                        McpTool.of("kb_delete_scope",
-                                "按 scope 批量删除（GDPR 数据清除）",
-                                Map.of("scope", "string (required) — 要清除的命名空间")),
                         McpTool.of("kb_stats",
                                 "查看知识库索引状态",
-                                Map.of())
+                                Map.of()),
+                        McpTool.of("kb_reembed",
+                                "用当前 Embedding 模型重新生成所有向量（升级模型后使用）",
+                                Map.of("batch_size", "int (optional, default: 100)"))
                 ))
                 .build());
     }
@@ -97,14 +95,13 @@ public class DocRankMcpServer {
             }
 
             int topK = toInt(params.get("top_k"), 5);
-            String scope = (String) params.get("scope");
 
             @SuppressWarnings("unchecked")
             List<String> tags = (List<String>) params.get("tags");
             Map<String, Object> filters = new java.util.LinkedHashMap<>();
             if (tags != null && !tags.isEmpty()) filters.put("tags", tags);
 
-            List<SearchResult> results = kb.search(query, topK, scope, filters);
+            List<SearchResult> results = kb.search(query, topK, filters);
 
             List<Map<String, Object>> output = results.stream().map(r -> Map.<String, Object>of(
                     "doc_id",       r.getChunk().getDocId(),
@@ -150,21 +147,19 @@ public class DocRankMcpServer {
             }
 
             String title = (String) params.getOrDefault("title", "");
-            String scope = (String) params.getOrDefault("scope", "global");
-            double importance = toDouble(params.get("importance"), 1.0);
             @SuppressWarnings("unchecked")
             List<String> tags = (List<String>) params.getOrDefault("tags", List.of());
             @SuppressWarnings("unchecked")
             Map<String, String> metadata = (Map<String, String>) params.getOrDefault("metadata", Map.of());
 
-            IngestResult result = kb.ingestText(title, content, tags, metadata,
-                    scope, importance, null);
+            IngestResult result = kb.ingestText(title, content, tags, metadata);
 
             return result.isSuccess()
                     ? ResponseEntity.ok(McpToolResult.ok(Map.of(
-                            "doc_id",      result.getDocId(),
-                            "title",       nvl(result.getTitle()),
-                            "chunk_count", result.getChunkCount()
+                            "doc_id",         result.getDocId(),
+                            "title",          nvl(result.getTitle()),
+                            "chunk_count",    result.getChunkCount(),
+                            "skipped_chunks", result.getSkippedChunks()
                     )))
                     : serverError(result.getError());
         } catch (Exception e) {
@@ -182,8 +177,7 @@ public class DocRankMcpServer {
     @PostMapping("/kb_ingest_file")
     public ResponseEntity<McpToolResult> ingestFile(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "tags",  required = false) List<String> tags,
-            @RequestParam(value = "scope", required = false, defaultValue = "global") String scope) {
+            @RequestParam(value = "tags",  required = false) List<String> tags) {
         try {
             if (file.isEmpty()) return badRequest("文件不能为空");
 
@@ -192,25 +186,51 @@ public class DocRankMcpServer {
 
             if (!parserSupports(filename)) {
                 return badRequest("不支持的文件格式: " + filename
-                        + "。支持：pdf, md, html, docx, txt, json");
+                        + "。支持：pdf, md, html, docx, txt, json, xlsx, pptx, epub, csv");
             }
 
             IngestResult result = kb.ingestFile(
                     file.getInputStream(), filename,
-                    tags != null ? tags : List.of(), Map.of(),
-                    scope, 1.0, null);
+                    tags != null ? tags : List.of(), Map.of());
 
             return result.isSuccess()
                     ? ResponseEntity.ok(McpToolResult.ok(Map.of(
-                            "doc_id",      result.getDocId(),
-                            "title",       nvl(result.getTitle()),
-                            "filename",    filename,
-                            "chunk_count", result.getChunkCount()
+                            "doc_id",         result.getDocId(),
+                            "title",          nvl(result.getTitle()),
+                            "filename",       filename,
+                            "chunk_count",    result.getChunkCount(),
+                            "skipped_chunks", result.getSkippedChunks()
                     )))
                     : serverError(result.getError());
         } catch (Exception e) {
             log.error("kb_ingest_file 失败", e);
             return serverError(e.getMessage());
+        }
+    }
+
+    // ============================================================ kb_reembed
+
+    /**
+     * 用当前 Embedding 模型重新生成所有向量并 upsert 回去。
+     * 适用于更换 Embedding 模型后迁移已有数据。
+     *
+     * 请求体（可选）：{"batch_size": 100}
+     */
+    @PostMapping("/kb_reembed")
+    public ResponseEntity<McpToolResult> reembed(
+            @RequestBody(required = false) Map<String, Object> params) {
+        try {
+            int batchSize = params != null
+                    ? ((Number) params.getOrDefault("batch_size", 100)).intValue()
+                    : 100;
+            ReembedResult result = kb.reembed(batchSize);
+            return ResponseEntity.ok(McpToolResult.ok(Map.of(
+                    "chunk_count", result.getChunkCount(),
+                    "elapsed_ms",  result.getElapsedMs()
+            )));
+        } catch (Exception e) {
+            log.error("reembed 失败", e);
+            return ResponseEntity.ok(McpToolResult.fail(e.getMessage()));
         }
     }
 
@@ -231,27 +251,6 @@ public class DocRankMcpServer {
             return ResponseEntity.ok(McpToolResult.ok(Map.of("deleted", docId)));
         } catch (Exception e) {
             log.error("kb_delete 失败", e);
-            return serverError(e.getMessage());
-        }
-    }
-
-    // ============================================================ kb_delete_scope
-
-    /**
-     * GDPR 批量删除：按 scope 清除所有数据
-     *
-     * 请求体：{"scope": "project-x"}
-     */
-    @PostMapping("/kb_delete_scope")
-    public ResponseEntity<McpToolResult> deleteScope(@RequestBody Map<String, Object> params) {
-        try {
-            String scope = (String) params.get("scope");
-            if (scope == null || scope.isBlank()) return badRequest("scope 不能为空");
-
-            kb.deleteByScope(scope);
-            return ResponseEntity.ok(McpToolResult.ok(Map.of("deleted_scope", scope)));
-        } catch (Exception e) {
-            log.error("kb_delete_scope 失败", e);
             return serverError(e.getMessage());
         }
     }
@@ -293,6 +292,8 @@ public class DocRankMcpServer {
         String lower = filename.toLowerCase();
         return lower.endsWith(".pdf")  || lower.endsWith(".md")
             || lower.endsWith(".html") || lower.endsWith(".docx")
-            || lower.endsWith(".txt")  || lower.endsWith(".json");
+            || lower.endsWith(".txt")  || lower.endsWith(".json")
+            || lower.endsWith(".xlsx") || lower.endsWith(".pptx")
+            || lower.endsWith(".epub") || lower.endsWith(".csv");
     }
 }

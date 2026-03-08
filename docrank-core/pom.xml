@@ -119,6 +119,21 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- PostgreSQL JDBC 驱动（optional，只在使用 pgvector 时需要）-->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.3</version>
+            <optional>true</optional>
+        </dependency>
+        <!-- HikariCP 连接池 -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>5.1.0</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- SLF4J -->
         <dependency>
             <groupId>org.slf4j</groupId>

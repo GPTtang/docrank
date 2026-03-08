@@ -61,7 +61,6 @@ class DocRankVectorStoreTest {
         store = DocRankVectorStore.builder()
                 .embeddingModel(new StubEmbeddingModel())
                 .vectorBackend(backend)
-                .defaultScope("test-scope")
                 .build();
     }
 
@@ -125,7 +124,7 @@ class DocRankVectorStoreTest {
     @Test
     void add_preservesMetadata() {
         Document doc = new Document("Spring AI vector store",
-                Map.of("title", "Spring AI Guide", "scope", "docs"));
+                Map.of("title", "Spring AI Guide"));
         store.add(List.of(doc));
 
         SearchRequest request = SearchRequest.builder()

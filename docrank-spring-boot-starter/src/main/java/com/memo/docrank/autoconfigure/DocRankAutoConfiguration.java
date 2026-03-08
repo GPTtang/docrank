@@ -15,6 +15,7 @@ import com.memo.docrank.core.search.LuceneBM25Index;
 import com.memo.docrank.core.store.IndexBackend;
 import com.memo.docrank.core.store.InMemoryBackend;
 import com.memo.docrank.core.store.LanceDBBackend;
+import com.memo.docrank.core.store.PgvectorBackend;
 import com.memo.docrank.core.store.QdrantBackend;
 import com.memo.docrank.memory.KnowledgeBaseService;
 import com.memo.docrank.mcp.DocRankMcpServer;
@@ -45,6 +46,16 @@ public class DocRankAutoConfiguration {
                 try { qb.createIndex(); }
                 catch (Exception e) { log.warn("Qdrant 初始化失败: {}", e.getMessage()); }
                 yield qb;
+            }
+            case "pgvector" -> {
+                DocRankProperties.BackendProps.PgvectorProps cfg = backend.getPgvector();
+                log.info("DocRank 向量后端: pgvector @ {}", cfg.getJdbcUrl());
+                yield new PgvectorBackend(
+                        cfg.getJdbcUrl(),
+                        cfg.getUsername(),
+                        cfg.getPassword(),
+                        cfg.getTableName(),
+                        props.getEmbedding().getDimension());
             }
             case "memory" -> {
                 log.warn("DocRank 向量后端: InMemory（仅用于测试，不持久化）");
@@ -150,9 +161,12 @@ public class DocRankAutoConfiguration {
                                                       EmbeddingProvider embedder,
                                                       ChunkingService chunker,
                                                       HybridSearcher searcher,
-                                                      ParserRegistry parserRegistry) {
+                                                      ParserRegistry parserRegistry,
+                                                      DocRankProperties props) {
         return new KnowledgeBaseService(
-                vectorBackend, bm25Index, embedder, chunker, searcher, parserRegistry);
+                vectorBackend, bm25Index, embedder, chunker, searcher, parserRegistry,
+                props.getIngest().isDedupEnabled(),
+                props.getIngest().getDedupThreshold());
     }
 
     // ---------------------------------------------------------------- MCP Server

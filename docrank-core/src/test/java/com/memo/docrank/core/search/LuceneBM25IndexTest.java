@@ -44,22 +44,6 @@ class LuceneBM25IndexTest {
                 .chunkIndex(0)
                 .language(Language.ENGLISH)
                 .tags(List.of(tags))
-                .scope("global")
-                .importance(1.0)
-                .updatedAt(Instant.now())
-                .build();
-    }
-
-    private Chunk chunkWithScope(String docId, String title, String text, String scope) {
-        return Chunk.builder()
-                .chunkId(UUID.randomUUID().toString())
-                .docId(docId)
-                .title(title)
-                .chunkText(text)
-                .chunkIndex(0)
-                .language(Language.ENGLISH)
-                .tags(List.of())
-                .scope(scope)
                 .importance(1.0)
                 .updatedAt(Instant.now())
                 .build();
@@ -191,45 +175,18 @@ class LuceneBM25IndexTest {
     }
 
     @Test
-    void searchWithScopeFilter_returnsOnlyMatchingScope() {
-        index.addChunk(chunkWithScope("doc1", "T1", "distributed systems microservices", "project-a"));
-        index.addChunk(chunkWithScope("doc2", "T2", "distributed systems microservices", "project-b"));
-
-        List<RecallCandidate> results = index.search("distributed systems", 5,
-                Map.of("scope", "project-a"));
-        assertFalse(results.isEmpty());
-        assertTrue(results.stream().allMatch(r -> "project-a".equals(r.getChunk().getScope())));
-    }
-
-    @Test
-    void deleteByScope_removesOnlyScopeChunks() {
-        index.addChunk(chunkWithScope("doc1", "T1", "kubernetes container orchestration", "ns-a"));
-        index.addChunk(chunkWithScope("doc2", "T2", "docker container images", "ns-a"));
-        index.addChunk(chunkWithScope("doc3", "T3", "cloud native architecture", "ns-b"));
-        assertEquals(3, index.count());
-
-        index.deleteByScope("ns-a");
-        assertEquals(1, index.count());
-
-        List<RecallCandidate> remaining = index.search("cloud native", 5, Map.of());
-        assertFalse(remaining.isEmpty());
-        assertEquals("ns-b", remaining.get(0).getChunk().getScope());
-    }
-
-    @Test
-    void importanceAndScopeRoundTrip() {
+    void importanceRoundTrip() {
         Chunk c = Chunk.builder()
                 .chunkId(UUID.randomUUID().toString())
                 .docId("doc1").title("T").chunkText("importance test content")
                 .chunkIndex(0).language(Language.ENGLISH).tags(List.of())
-                .scope("team-alpha").importance(0.75)
+                .importance(0.75)
                 .updatedAt(Instant.now()).build();
         index.addChunk(c);
 
         List<RecallCandidate> results = index.search("importance test", 1, Map.of());
         assertFalse(results.isEmpty());
         Chunk retrieved = results.get(0).getChunk();
-        assertEquals("team-alpha", retrieved.getScope());
         assertEquals(0.75, retrieved.getImportance(), 0.001);
     }
 }

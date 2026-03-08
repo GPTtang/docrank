@@ -53,12 +53,6 @@ public class EvalQuery {
     @JsonProperty("relevant")
     private Map<String, Integer> relevant;
 
-    /**
-     * 可选：限定搜索的 scope（为空时不过滤）
-     */
-    @JsonProperty("scope")
-    private String scope;
-
     /** 返回该查询的相关文档数（grade > 0） */
     public int relevantCount() {
         if (relevant == null) return 0;

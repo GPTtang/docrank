@@ -95,9 +95,7 @@ public class EvaluationService {
 
     private List<String> retrieve(EvalQuery query, int k) {
         try {
-            Map<String, Object> filters = query.getScope() != null
-                    ? Map.of("scope", query.getScope()) : Map.of();
-            return kb.search(query.getQuery(), k, filters).stream()
+            return kb.search(query.getQuery(), k, Map.of()).stream()
                     .map(r -> r.getChunk().getDocId())
                     .toList();
         } catch (Exception e) {

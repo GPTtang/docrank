@@ -23,7 +23,6 @@ import java.util.stream.Collectors;
  * ContentRetriever retriever = DocRankHybridRetriever.builder()
  *         .knowledgeBase(knowledgeBaseService)
  *         .topK(5)
- *         .scope("project-x")
  *         .build();
  *
  * RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
@@ -36,19 +35,17 @@ public class DocRankHybridRetriever implements ContentRetriever {
 
     private final KnowledgeBaseService kb;
     private final int                  topK;
-    private final String               scope;
     private final Map<String, Object>  extraFilters;
 
     private DocRankHybridRetriever(Builder builder) {
         this.kb           = Objects.requireNonNull(builder.kb, "knowledgeBase is required");
         this.topK         = builder.topK > 0 ? builder.topK : 5;
-        this.scope        = builder.scope;
         this.extraFilters = builder.extraFilters != null ? builder.extraFilters : Map.of();
     }
 
     @Override
     public List<Content> retrieve(Query query) {
-        List<SearchResult> results = kb.search(query.text(), topK, scope, extraFilters);
+        List<SearchResult> results = kb.search(query.text(), topK, extraFilters);
 
         List<Content> contents = results.stream()
                 .map(r -> {
@@ -57,7 +54,6 @@ public class DocRankHybridRetriever implements ContentRetriever {
                     meta.put("doc_id",   r.getChunk().getDocId());
                     meta.put("title",    r.getChunk().getTitle()       != null ? r.getChunk().getTitle()       : "");
                     meta.put("section",  r.getChunk().getSectionPath() != null ? r.getChunk().getSectionPath() : "");
-                    meta.put("scope",    r.getChunk().getScope()       != null ? r.getChunk().getScope()       : "");
                     meta.put("score",    String.valueOf(r.getScore()));
                     meta.put("language", r.getChunk().getLanguage()    != null ? r.getChunk().getLanguage().name() : "");
                     TextSegment segment = TextSegment.from(
@@ -67,7 +63,7 @@ public class DocRankHybridRetriever implements ContentRetriever {
                 })
                 .collect(Collectors.toList());
 
-        log.debug("DocRankHybridRetriever: query='{}', scope='{}', hits={}", query.text(), scope, contents.size());
+        log.debug("DocRankHybridRetriever: query='{}', hits={}", query.text(), contents.size());
         return contents;
     }
 
@@ -78,7 +74,6 @@ public class DocRankHybridRetriever implements ContentRetriever {
     public static class Builder {
         private KnowledgeBaseService kb;
         private int                  topK = 5;
-        private String               scope;
         private Map<String, Object>  extraFilters;
 
         public Builder knowledgeBase(KnowledgeBaseService kb) {
@@ -86,9 +81,6 @@ public class DocRankHybridRetriever implements ContentRetriever {
         }
         public Builder topK(int topK) {
             this.topK = topK; return this;
-        }
-        public Builder scope(String scope) {
-            this.scope = scope; return this;
         }
         public Builder extraFilters(Map<String, Object> filters) {
             this.extraFilters = filters; return this;

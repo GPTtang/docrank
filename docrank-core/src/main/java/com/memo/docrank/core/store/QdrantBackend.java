@@ -87,7 +87,6 @@ public class QdrantBackend implements IndexBackend {
             payload.put("chunk_index", c.getChunkIndex());
             payload.put("language",    c.getLanguage() != null ? c.getLanguage().name() : Language.UNKNOWN.name());
             payload.put("updated_at",  c.getUpdatedAt() != null ? c.getUpdatedAt().toString() : "");
-            payload.put("scope",       c.getScope() != null ? c.getScope() : "global");
             payload.put("importance",  c.getImportance());
             payload.put("expires_at",  c.getExpiresAt() != null ? c.getExpiresAt().toString() : null);
 
@@ -115,20 +114,6 @@ public class QdrantBackend implements IndexBackend {
                 )
         );
         post(url, body);
-    }
-
-    @Override
-    public void deleteByScope(String scope) {
-        String url = baseUrl + COLLECTION_PATH + collectionName + "/points/delete";
-        Map<String, Object> body = Map.of(
-                "filter", Map.of(
-                        "must", List.of(
-                                Map.of("key", "scope", "match", Map.of("value", scope))
-                        )
-                )
-        );
-        post(url, body);
-        log.info("Qdrant scope '{}' 数据已清除", scope);
     }
 
     // ------------------------------------------------------------------ 检索
@@ -184,6 +169,41 @@ public class QdrantBackend implements IndexBackend {
         }
     }
 
+    @Override
+    public List<Chunk> listAllChunks(int offset, int limit) {
+        try {
+            String url = baseUrl + COLLECTION_PATH + collectionName + "/points/scroll";
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("limit", limit);
+            body.put("offset", offset);
+            body.put("with_payload", true);
+            body.put("with_vector", false);
+            String resp = post(url, body);
+            JsonNode root = mapper.readTree(resp);
+            List<Chunk> chunks = new ArrayList<>();
+            for (JsonNode point : root.path("result").path("points")) {
+                JsonNode payload = point.path("payload");
+                Chunk chunk = Chunk.builder()
+                        .chunkId(payload.path("chunk_id").asText())
+                        .docId(payload.path("doc_id").asText())
+                        .title(payload.path("title").asText())
+                        .sectionPath(payload.path("section_path").asText())
+                        .chunkText(payload.path("chunk_text").asText())
+                        .chunkIndex(payload.path("chunk_index").asInt())
+                        .language(parseLanguage(payload.path("language").asText()))
+                        .updatedAt(parseInstant(payload.path("updated_at").asText()))
+                        .importance(payload.path("importance").asDouble(1.0))
+                        .expiresAt(parseInstant(payload.path("expires_at").asText()))
+                        .build();
+                chunks.add(chunk);
+            }
+            return chunks;
+        } catch (Exception e) {
+            log.error("Qdrant listAllChunks 失败: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     // ----------------------------------------------------------------- private
 
     private Map<String, Object> buildFilter(Map<String, Object> filters) {
@@ -216,7 +236,6 @@ public class QdrantBackend implements IndexBackend {
                         .chunkIndex(payload.path("chunk_index").asInt())
                         .language(parseLanguage(payload.path("language").asText()))
                         .updatedAt(parseInstant(payload.path("updated_at").asText()))
-                        .scope(payload.path("scope").asText("global"))
                         .importance(payload.path("importance").asDouble(1.0))
                         .expiresAt(parseInstant(payload.path("expires_at").asText()))
                         .build();

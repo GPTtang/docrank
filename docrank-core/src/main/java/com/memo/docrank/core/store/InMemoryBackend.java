@@ -46,12 +46,6 @@ public class InMemoryBackend implements IndexBackend {
     }
 
     @Override
-    public void deleteByScope(String scope) {
-        store.values().removeIf(c -> scope.equals(c.getChunk().getScope()));
-        log.info("InMemoryBackend scope '{}' 数据已清除", scope);
-    }
-
-    @Override
     public List<RecallCandidate> keywordSearch(String query, int topK,
                                                 Map<String, Object> filters) {
         String lq = query.toLowerCase();
@@ -94,15 +88,18 @@ public class InMemoryBackend implements IndexBackend {
     @Override
     public long countChunks() { return store.size(); }
 
+    @Override
+    public List<Chunk> listAllChunks(int offset, int limit) {
+        return store.values().stream()
+                .map(ChunkWithVectors::getChunk)
+                .skip(offset)
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
     // ----------------------------------------------------------------- private
 
     private boolean matchesFilters(Chunk chunk, Map<String, Object> filters) {
-        if (filters == null || filters.isEmpty()) return true;
-        for (Map.Entry<String, Object> e : filters.entrySet()) {
-            if ("scope".equals(e.getKey())) {
-                if (!e.getValue().toString().equals(chunk.getScope())) return false;
-            }
-        }
         return true;
     }
 

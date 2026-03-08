@@ -17,9 +17,6 @@ public interface BM25Index {
 
     void deleteByDocId(String docId);
 
-    /** 按 scope 字段批量删除（GDPR 清除）*/
-    default void deleteByScope(String scope) {}
-
     void deleteAll();
 
     /**

@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  lancedb:
+    image: lancedb/lancedb:latest
+    ports:
+      - "8181:8181"
+    volumes:
+      - lancedb-data:/data
+    command: ["--host", "0.0.0.0", "--port", "8181", "--storage-path", "/data"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8181/v1/table/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  docrank:
+    image: memo/docrank:latest
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      lancedb:
+        condition: service_healthy
+    volumes:
+      - ./models:/opt/docrank/models:ro   # ONNX models (read-only)
+      - docrank-data:/opt/docrank/data    # Lucene index (persistent)
+    environment:
+      # Vector backend
+      DOCRANK_BACKEND_LANCEDB_HOST: lancedb
+      DOCRANK_BACKEND_LANCEDB_PORT: "8181"
+      # Model paths
+      DOCRANK_EMBEDDING_ONNX_MODEL_PATH: /opt/docrank/models/bge-m3
+      DOCRANK_RERANKER_ONNX_MODEL_PATH: /opt/docrank/models/bge-reranker-v2-m3
+      # Lucene index
+      DOCRANK_LUCENE_INDEX_PATH: /opt/docrank/data/lucene-index
+
+volumes:
+  lancedb-data:
+  docrank-data:

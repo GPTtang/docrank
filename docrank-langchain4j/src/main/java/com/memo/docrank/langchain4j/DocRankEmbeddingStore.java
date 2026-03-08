@@ -27,7 +27,6 @@ import java.util.stream.Collectors;
  * EmbeddingStore<TextSegment> store = DocRankEmbeddingStore.builder()
  *         .vectorBackend(new LanceDBBackend("localhost", 8181, "my_kb", 1024))
  *         .bm25Index(new LuceneBM25Index("/data/lucene"))
- *         .defaultScope("my-project")
  *         .build();
  * }</pre>
  */
@@ -36,12 +35,10 @@ public class DocRankEmbeddingStore implements EmbeddingStore<TextSegment> {
 
     private final IndexBackend vectorBackend;
     private final BM25Index   bm25Index;     // nullable — BM25 indexing is optional
-    private final String      defaultScope;
 
     private DocRankEmbeddingStore(Builder builder) {
         this.vectorBackend = Objects.requireNonNull(builder.vectorBackend, "vectorBackend is required");
         this.bm25Index     = builder.bm25Index;
-        this.defaultScope  = builder.defaultScope != null ? builder.defaultScope : "global";
     }
 
     // ----------------------------------------------------------- EmbeddingStore API
@@ -57,7 +54,7 @@ public class DocRankEmbeddingStore implements EmbeddingStore<TextSegment> {
     public void add(String id, Embedding embedding) {
         Chunk chunk = Chunk.builder()
                 .chunkId(id).docId(id)
-                .chunkText("").scope(defaultScope)
+                .chunkText("")
                 .updatedAt(Instant.now())
                 .build();
         upsert(chunk, embedding.vector());
@@ -80,7 +77,7 @@ public class DocRankEmbeddingStore implements EmbeddingStore<TextSegment> {
             ids.add(id);
             Chunk chunk = Chunk.builder()
                     .chunkId(id).docId(id)
-                    .chunkText("").scope(defaultScope)
+                    .chunkText("")
                     .updatedAt(Instant.now())
                     .build();
             batch.add(toChunkWithVectors(chunk, emb.vector()));
@@ -124,8 +121,8 @@ public class DocRankEmbeddingStore implements EmbeddingStore<TextSegment> {
 
     @Override
     public void removeAll() {
-        vectorBackend.deleteByScope(defaultScope);
-        if (bm25Index != null) bm25Index.deleteByScope(defaultScope);
+        vectorBackend.deleteIndex();
+        if (bm25Index != null) bm25Index.deleteAll();
     }
 
     @Override
@@ -155,16 +152,12 @@ public class DocRankEmbeddingStore implements EmbeddingStore<TextSegment> {
     public static class Builder {
         private IndexBackend vectorBackend;
         private BM25Index    bm25Index;
-        private String       defaultScope;
 
         public Builder vectorBackend(IndexBackend vectorBackend) {
             this.vectorBackend = vectorBackend; return this;
         }
         public Builder bm25Index(BM25Index bm25Index) {
             this.bm25Index = bm25Index; return this;
-        }
-        public Builder defaultScope(String scope) {
-            this.defaultScope = scope; return this;
         }
         public DocRankEmbeddingStore build() {
             return new DocRankEmbeddingStore(this);
@@ -189,14 +182,13 @@ public class DocRankEmbeddingStore implements EmbeddingStore<TextSegment> {
         String docId     = getOrDefault(meta, "doc_id",  id);
         String title     = getOrDefault(meta, "title",   "");
         String section   = getOrDefault(meta, "section", "");
-        String scope     = getOrDefault(meta, "scope",   defaultScope);
         double importance = parseDouble(meta, "importance", 1.0);
 
         return Chunk.builder()
                 .chunkId(id).docId(docId)
                 .title(title).sectionPath(section)
                 .chunkText(segment.text())
-                .scope(scope).importance(importance)
+                .importance(importance)
                 .updatedAt(Instant.now())
                 .build();
     }
@@ -206,7 +198,6 @@ public class DocRankEmbeddingStore implements EmbeddingStore<TextSegment> {
         if (chunk.getDocId()      != null) meta.put("doc_id",     chunk.getDocId());
         if (chunk.getTitle()      != null) meta.put("title",      chunk.getTitle());
         if (chunk.getSectionPath()!= null) meta.put("section",    chunk.getSectionPath());
-        if (chunk.getScope()      != null) meta.put("scope",      chunk.getScope());
         meta.put("importance", String.valueOf(chunk.getImportance()));
         if (chunk.getUpdatedAt()  != null) meta.put("updated_at", chunk.getUpdatedAt().toString());
         return TextSegment.from(

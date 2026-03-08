@@ -1,4 +1,5 @@
 com\memo\docrank\autoconfigure\DocRankProperties$EmbeddingProps$OnnxProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$BackendProps$PgvectorProps.class
 com\memo\docrank\autoconfigure\DocRankProperties$LanguageProps.class
 com\memo\docrank\autoconfigure\DocRankProperties$RerankerProps$OnnxProps.class
 com\memo\docrank\autoconfigure\DocRankProperties$LuceneProps.class

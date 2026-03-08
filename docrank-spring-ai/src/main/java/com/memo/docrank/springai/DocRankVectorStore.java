@@ -30,7 +30,6 @@ import java.util.stream.Collectors;
  *             .embeddingModel(embeddingModel)
  *             .vectorBackend(vectorBackend)
  *             .bm25Index(bm25Index)
- *             .defaultScope("my-project")
  *             .build();
  * }
  * }</pre>
@@ -41,13 +40,11 @@ public class DocRankVectorStore implements VectorStore {
     private final EmbeddingModel embeddingModel;
     private final IndexBackend   vectorBackend;
     private final BM25Index      bm25Index;
-    private final String         defaultScope;
 
     private DocRankVectorStore(Builder builder) {
         this.embeddingModel = Objects.requireNonNull(builder.embeddingModel, "embeddingModel is required");
         this.vectorBackend  = Objects.requireNonNull(builder.vectorBackend,  "vectorBackend is required");
         this.bm25Index      = builder.bm25Index;
-        this.defaultScope   = builder.defaultScope != null ? builder.defaultScope : "global";
     }
 
     // ----------------------------------------------------------- VectorStore API
@@ -96,16 +93,6 @@ public class DocRankVectorStore implements VectorStore {
         double threshold = request.getSimilarityThreshold();
 
         Map<String, Object> filters = new LinkedHashMap<>();
-        // Spring AI filter expression → scope mapping (simplified)
-        if (request.getFilterExpression() != null) {
-            String filterStr = request.getFilterExpression().toString();
-            if (filterStr.contains("scope")) {
-                // parse "scope == 'xxx'" style
-                String scope = parseSimpleFilter(filterStr, "scope");
-                if (scope != null) filters.put("scope", scope);
-            }
-        }
-        if (filters.isEmpty()) filters.put("scope", defaultScope);
 
         List<RecallCandidate> candidates = vectorBackend.vectorSearch(queryVec, topK, filters);
 
@@ -123,7 +110,6 @@ public class DocRankVectorStore implements VectorStore {
         private EmbeddingModel embeddingModel;
         private IndexBackend   vectorBackend;
         private BM25Index      bm25Index;
-        private String         defaultScope;
 
         public Builder embeddingModel(EmbeddingModel embeddingModel) {
             this.embeddingModel = embeddingModel; return this;
@@ -133,9 +119,6 @@ public class DocRankVectorStore implements VectorStore {
         }
         public Builder bm25Index(BM25Index bm25Index) {
             this.bm25Index = bm25Index; return this;
-        }
-        public Builder defaultScope(String scope) {
-            this.defaultScope = scope; return this;
         }
         public DocRankVectorStore build() {
             return new DocRankVectorStore(this);
@@ -150,14 +133,13 @@ public class DocRankVectorStore implements VectorStore {
         String docId     = getStr(meta, "doc_id",  id);
         String title     = getStr(meta, "title",   "");
         String section   = getStr(meta, "section", "");
-        String scope     = getStr(meta, "scope",   defaultScope);
         double importance = getDouble(meta, "importance", 1.0);
 
         return Chunk.builder()
                 .chunkId(id).docId(docId)
                 .title(title).sectionPath(section)
                 .chunkText(doc.getFormattedContent())
-                .scope(scope).importance(importance)
+                .importance(importance)
                 .updatedAt(Instant.now())
                 .build();
     }
@@ -167,7 +149,6 @@ public class DocRankVectorStore implements VectorStore {
         meta.put("doc_id",     chunk.getDocId()      != null ? chunk.getDocId()      : "");
         meta.put("title",      chunk.getTitle()       != null ? chunk.getTitle()      : "");
         meta.put("section",    chunk.getSectionPath() != null ? chunk.getSectionPath(): "");
-        meta.put("scope",      chunk.getScope()       != null ? chunk.getScope()      : "");
         meta.put("importance", chunk.getImportance());
         meta.put("score",      score);
         if (chunk.getUpdatedAt() != null) meta.put("updated_at", chunk.getUpdatedAt().toString());
@@ -203,15 +184,4 @@ public class DocRankVectorStore implements VectorStore {
         return def;
     }
 
-    /** 简单解析 "scope == 'value'" 形式的过滤表达式 */
-    private String parseSimpleFilter(String expr, String key) {
-        // e.g. "scope == 'project-x'" or "scope = 'project-x'"
-        int idx = expr.indexOf(key);
-        if (idx < 0) return null;
-        String after = expr.substring(idx + key.length()).replaceAll("\\s*==?\\s*", "").trim();
-        if (after.startsWith("'") && after.contains("'")) {
-            return after.substring(1, after.indexOf("'", 1));
-        }
-        return null;
-    }
 }

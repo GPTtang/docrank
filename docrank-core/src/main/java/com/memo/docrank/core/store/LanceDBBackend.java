@@ -80,13 +80,6 @@ public class LanceDBBackend implements IndexBackend {
         post(url, Map.of("predicate", "doc_id = '" + docId + "'"));
     }
 
-    @Override
-    public void deleteByScope(String scope) {
-        String url = baseUrl + "/v1/table/" + tableName + "/delete/";
-        post(url, Map.of("predicate", "scope = '" + scope + "'"));
-        log.info("LanceDB scope '{}' 数据已清除", scope);
-    }
-
     // ------------------------------------------------------------------ 检索
 
     @Override
@@ -154,6 +147,25 @@ public class LanceDBBackend implements IndexBackend {
         }
     }
 
+    @Override
+    public List<Chunk> listAllChunks(int offset, int limit) {
+        try {
+            String url = baseUrl + "/v1/table/" + tableName + "/query/";
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("query_type", "scan");
+            body.put("limit", limit);
+            body.put("offset", offset);
+            String resp = post(url, body);
+            List<RecallCandidate> candidates = parseResults(resp, RecallCandidate.RecallSource.VECTOR);
+            return candidates.stream()
+                    .map(RecallCandidate::getChunk)
+                    .collect(java.util.stream.Collectors.toList());
+        } catch (Exception e) {
+            log.error("LanceDB listAllChunks 失败: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     // ----------------------------------------------------------------- private
 
     private Map<String, Object> buildSchema() {
@@ -166,7 +178,6 @@ public class LanceDBBackend implements IndexBackend {
         fields.add(field("chunk_index", "int32",   false));
         fields.add(field("language",    "utf8",    false));
         fields.add(field("updated_at",  "utf8",    false));
-        fields.add(field("scope",       "utf8",    false));
         fields.add(field("importance",  "float64", false));
         fields.add(field("expires_at",  "utf8",    true));
         // vec_chunk: float32[vectorDim]
@@ -199,7 +210,6 @@ public class LanceDBBackend implements IndexBackend {
         row.put("chunk_index",  c.getChunkIndex());
         row.put("language",     c.getLanguage() != null ? c.getLanguage().name() : Language.UNKNOWN.name());
         row.put("updated_at",   c.getUpdatedAt() != null ? c.getUpdatedAt().toString() : "");
-        row.put("scope",        c.getScope() != null ? c.getScope() : "global");
         row.put("importance",   c.getImportance());
         row.put("expires_at",   c.getExpiresAt() != null ? c.getExpiresAt().toString() : null);
         row.put("vec_chunk",    toList(cwv.getVecChunk()));
@@ -237,7 +247,6 @@ public class LanceDBBackend implements IndexBackend {
                         .chunkIndex(row.path("chunk_index").asInt())
                         .language(parseLanguage(row.path("language").asText()))
                         .updatedAt(parseInstant(row.path("updated_at").asText()))
-                        .scope(row.path("scope").asText("global"))
                         .importance(row.path("importance").asDouble(1.0))
                         .expiresAt(parseInstant(row.path("expires_at").asText()))
                         .build();

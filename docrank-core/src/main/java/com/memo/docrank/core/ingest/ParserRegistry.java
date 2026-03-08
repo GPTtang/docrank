@@ -18,6 +18,10 @@ import java.util.UUID;
  *   .docx  — Apache POI
  *   .json  — Jackson
  *   .txt   — Plain text
+ *   .xlsx  — Apache POI XSSFWorkbook
+ *   .pptx  — Apache POI XMLSlideShow
+ *   .epub  — ZipInputStream + Jsoup
+ *   .csv   — 原生 Java
  */
 @Slf4j
 public class ParserRegistry {
@@ -34,6 +38,10 @@ public class ParserRegistry {
         register(new WordParser());
         register(new JsonParser());
         register(new TextParser());
+        register(new ExcelParser());
+        register(new PowerPointParser());
+        register(new EpubParser());
+        register(new CsvParser());
     }
 
     private void register(DocumentParser parser) {

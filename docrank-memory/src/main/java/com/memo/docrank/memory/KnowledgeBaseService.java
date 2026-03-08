@@ -6,11 +6,11 @@ import com.memo.docrank.core.ingest.ParsedDocument;
 import com.memo.docrank.core.ingest.ParserRegistry;
 import com.memo.docrank.core.model.Chunk;
 import com.memo.docrank.core.model.ChunkWithVectors;
+import com.memo.docrank.core.model.RecallCandidate;
 import com.memo.docrank.core.model.SearchResult;
 import com.memo.docrank.core.search.BM25Index;
 import com.memo.docrank.core.search.HybridSearcher;
 import com.memo.docrank.core.store.IndexBackend;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.ByteArrayInputStream;
@@ -21,6 +21,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * 知识库核心服务 — 专为 AI Agent 设计的本地语义搜索引擎
@@ -38,7 +40,6 @@ import java.util.UUID;
  *         → bge-reranker-v2-m3 精排
  */
 @Slf4j
-@RequiredArgsConstructor
 public class KnowledgeBaseService {
 
     private final IndexBackend      vectorBackend;
@@ -47,6 +48,35 @@ public class KnowledgeBaseService {
     private final ChunkingService   chunker;
     private final HybridSearcher    searcher;
     private final ParserRegistry    parserRegistry;
+    private final boolean           dedupEnabled;
+    private final double            dedupThreshold;
+
+    public KnowledgeBaseService(IndexBackend vectorBackend,
+                                BM25Index bm25Index,
+                                EmbeddingProvider embedder,
+                                ChunkingService chunker,
+                                HybridSearcher searcher,
+                                ParserRegistry parserRegistry) {
+        this(vectorBackend, bm25Index, embedder, chunker, searcher, parserRegistry, false, 0.95);
+    }
+
+    public KnowledgeBaseService(IndexBackend vectorBackend,
+                                BM25Index bm25Index,
+                                EmbeddingProvider embedder,
+                                ChunkingService chunker,
+                                HybridSearcher searcher,
+                                ParserRegistry parserRegistry,
+                                boolean dedupEnabled,
+                                double dedupThreshold) {
+        this.vectorBackend  = vectorBackend;
+        this.bm25Index      = bm25Index;
+        this.embedder       = embedder;
+        this.chunker        = chunker;
+        this.searcher       = searcher;
+        this.parserRegistry = parserRegistry;
+        this.dedupEnabled   = dedupEnabled;
+        this.dedupThreshold = dedupThreshold;
+    }
 
     // ---------------------------------------------------------------- ingest
 
@@ -55,19 +85,10 @@ public class KnowledgeBaseService {
      */
     public IngestResult ingestFile(InputStream input, String filename,
                                    List<String> tags, Map<String, String> metadata) {
-        return ingestFile(input, filename, tags, metadata, "global", 1.0, null);
-    }
-
-    /**
-     * 从文件流写入知识库（带 scope / importance / TTL 参数）
-     */
-    public IngestResult ingestFile(InputStream input, String filename,
-                                   List<String> tags, Map<String, String> metadata,
-                                   String scope, double importance, java.time.Instant expiresAt) {
         String docId = UUID.randomUUID().toString();
         try {
             ParsedDocument parsed = parserRegistry.parse(input, filename, docId);
-            return indexDocument(parsed, tags, metadata, scope, importance, expiresAt);
+            return indexDocument(parsed, tags, metadata);
         } catch (Exception e) {
             log.error("文件写入失败 filename={}: {}", filename, e.getMessage(), e);
             return IngestResult.fail(docId, e.getMessage());
@@ -79,15 +100,6 @@ public class KnowledgeBaseService {
      */
     public IngestResult ingestText(String title, String content,
                                    List<String> tags, Map<String, String> metadata) {
-        return ingestText(title, content, tags, metadata, "global", 1.0, null);
-    }
-
-    /**
-     * 从原始文本写入知识库（带 scope / importance / TTL 参数）
-     */
-    public IngestResult ingestText(String title, String content,
-                                   List<String> tags, Map<String, String> metadata,
-                                   String scope, double importance, java.time.Instant expiresAt) {
         String docId = UUID.randomUUID().toString();
         try {
             InputStream stream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
@@ -101,7 +113,7 @@ public class KnowledgeBaseService {
                     .metadata(metadata != null ? metadata : parsed.getMetadata())
                     .mimeType("text/plain")
                     .build();
-            return indexDocument(withTitle, tags, metadata, scope, importance, expiresAt);
+            return indexDocument(withTitle, tags, metadata);
         } catch (Exception e) {
             log.error("文本写入失败 title={}: {}", title, e.getMessage(), e);
             return IngestResult.fail(docId, e.getMessage());
@@ -124,17 +136,6 @@ public class KnowledgeBaseService {
         return results;
     }
 
-    /**
-     * 按 scope 过滤的混合语义搜索
-     */
-    public List<SearchResult> search(String query, int topK, String scope,
-                                     Map<String, Object> extraFilters) {
-        Map<String, Object> filters = new java.util.LinkedHashMap<>();
-        if (extraFilters != null) filters.putAll(extraFilters);
-        if (scope != null && !scope.isBlank()) filters.put("scope", scope);
-        return search(query, topK, filters);
-    }
-
     // ---------------------------------------------------------------- delete
 
     /**
@@ -144,15 +145,6 @@ public class KnowledgeBaseService {
         vectorBackend.deleteByDocId(docId);
         bm25Index.deleteByDocId(docId);
         log.info("文档删除完成 docId={}", docId);
-    }
-
-    /**
-     * GDPR 删除：按 scope 批量删除所有文档
-     */
-    public void deleteByScope(String scope) {
-        vectorBackend.deleteByScope(scope);
-        bm25Index.deleteByScope(scope);
-        log.info("Scope 数据清除完成 scope={}", scope);
     }
 
     // ---------------------------------------------------------------- stats
@@ -165,10 +157,7 @@ public class KnowledgeBaseService {
 
     private IngestResult indexDocument(ParsedDocument parsed,
                                        List<String> tags,
-                                       Map<String, String> metadata,
-                                       String scope, double importance,
-                                       java.time.Instant expiresAt) {
-        String resolvedScope = scope != null && !scope.isBlank() ? scope : "global";
+                                       Map<String, String> metadata) {
         List<Chunk> allChunks = new ArrayList<>();
         Instant now = Instant.now();
 
@@ -187,9 +176,6 @@ public class KnowledgeBaseService {
                             .chunkIndex(chunk.getChunkIndex())
                             .language(chunk.getLanguage())
                             .tags(tags != null ? tags : List.of())
-                            .scope(resolvedScope)
-                            .importance(importance)
-                            .expiresAt(expiresAt)
                             .updatedAt(now)
                             .build());
                 }
@@ -203,9 +189,6 @@ public class KnowledgeBaseService {
                             .chunkText(c.getChunkText()).chunkIndex(c.getChunkIndex())
                             .language(c.getLanguage())
                             .tags(tags != null ? tags : List.of())
-                            .scope(resolvedScope)
-                            .importance(importance)
-                            .expiresAt(expiresAt)
                             .updatedAt(now).build())
                     .toList();
         }
@@ -218,22 +201,81 @@ public class KnowledgeBaseService {
         List<String> texts = allChunks.stream().map(Chunk::getChunkText).toList();
         List<float[]> vecs = embedder.encode(texts);
 
-        List<ChunkWithVectors> withVecs = new ArrayList<>();
+        // 去重过滤（向量化之后、双写之前）
+        List<ChunkWithVectors> toWrite = new ArrayList<>();
+        int skipped = 0;
         for (int i = 0; i < allChunks.size(); i++) {
-            withVecs.add(ChunkWithVectors.builder()
-                    .chunk(allChunks.get(i))
-                    .vecChunk(toFloatList(vecs.get(i)))
-                    .build());
+            if (isDuplicate(vecs.get(i))) {
+                log.debug("跳过重复 chunk: {} (index={})", allChunks.get(i).getTitle(), i);
+                skipped++;
+            } else {
+                toWrite.add(ChunkWithVectors.builder()
+                        .chunk(allChunks.get(i))
+                        .vecChunk(toFloatList(vecs.get(i)))
+                        .build());
+            }
         }
 
         // 双写索引
-        vectorBackend.upsertChunks(withVecs);
-        bm25Index.addChunks(allChunks);
+        if (!toWrite.isEmpty()) {
+            vectorBackend.upsertChunks(toWrite);
+            bm25Index.addChunks(toWrite.stream()
+                    .map(ChunkWithVectors::getChunk)
+                    .collect(Collectors.toList()));
+        }
 
-        log.info("文档写入完成 docId={}, title='{}', chunks={}",
-                parsed.getDocId(), parsed.getTitle(), allChunks.size());
+        log.info("文档写入完成 docId={}, title='{}', chunks={}, skipped={}",
+                parsed.getDocId(), parsed.getTitle(), toWrite.size(), skipped);
 
-        return IngestResult.ok(parsed.getDocId(), parsed.getTitle(), allChunks.size());
+        return IngestResult.ok(parsed.getDocId(), parsed.getTitle(), toWrite.size(), skipped);
+    }
+
+    private boolean isDuplicate(float[] vec) {
+        if (!dedupEnabled) return false;
+        List<RecallCandidate> nearest = vectorBackend.vectorSearch(vec, 1, Map.of());
+        if (nearest.isEmpty()) return false;
+        double similarity = nearest.get(0).getScore();
+        return similarity >= dedupThreshold;
+    }
+
+    // ---------------------------------------------------------------- reembed
+
+    /**
+     * 用当前 Embedding 模型重新生成所有向量并 upsert 回去。
+     * 不改变 chunk 文本，不触及 Lucene 索引。
+     */
+    public ReembedResult reembed(int batchSize) {
+        long start = System.currentTimeMillis();
+        int total = 0;
+        int offset = 0;
+
+        while (true) {
+            List<Chunk> batch = vectorBackend.listAllChunks(offset, batchSize);
+            if (batch.isEmpty()) break;
+
+            List<String> texts = batch.stream()
+                    .map(Chunk::getChunkText)
+                    .collect(Collectors.toList());
+            List<float[]> vecs = embedder.encode(texts);
+
+            List<ChunkWithVectors> updated = IntStream.range(0, batch.size())
+                    .mapToObj(i -> ChunkWithVectors.builder()
+                            .chunk(batch.get(i))
+                            .vecChunk(toFloatList(vecs.get(i)))
+                            .build())
+                    .collect(Collectors.toList());
+
+            vectorBackend.upsertChunks(updated);
+
+            total += batch.size();
+            offset += batchSize;
+            log.info("reembed 进度: {} chunks 已处理", total);
+        }
+
+        return ReembedResult.builder()
+                .chunkCount(total)
+                .elapsedMs(System.currentTimeMillis() - start)
+                .build();
     }
 
     private List<Float> toFloatList(float[] arr) {

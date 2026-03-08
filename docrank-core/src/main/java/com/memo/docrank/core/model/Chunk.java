@@ -20,12 +20,6 @@ public class Chunk {
     private Language language;
     private Instant updatedAt;
 
-    // Phase 1 新增字段
-
-    /** 作用域隔离：global / agent:<id> / user:<id> / project:<id> */
-    @Builder.Default
-    private String scope = "global";
-
     /** 用户指定的重要度权重，范围 0.0 ~ 1.0，影响最终评分 */
     @Builder.Default
     private double importance = 1.0;

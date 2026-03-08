@@ -19,10 +19,11 @@ public class DocRankProperties {
     // ---------------------------------------------------------------- backend
     @Data
     public static class BackendProps {
-        /** 向量后端类型：lancedb | qdrant | memory */
-        private String      type    = "lancedb";
-        private LanceDBProps lancedb = new LanceDBProps();
-        private QdrantProps  qdrant  = new QdrantProps();
+        /** 向量后端类型：lancedb | qdrant | pgvector | memory */
+        private String       type     = "lancedb";
+        private LanceDBProps lancedb  = new LanceDBProps();
+        private QdrantProps  qdrant   = new QdrantProps();
+        private PgvectorProps pgvector = new PgvectorProps();
 
         @Data
         public static class LanceDBProps {
@@ -36,6 +37,14 @@ public class DocRankProperties {
             private String host           = "localhost";
             private int    port           = 6333;
             private String collectionName = "docrank_memories";
+        }
+
+        @Data
+        public static class PgvectorProps {
+            private String jdbcUrl   = "jdbc:postgresql://localhost:5432/docrank";
+            private String username  = "postgres";
+            private String password  = "";
+            private String tableName = "docrank_chunks";
         }
     }
 
@@ -111,8 +120,6 @@ public class DocRankProperties {
         private boolean dedupEnabled   = false;
         /** 去重相似度阈值（0.0~1.0），超过此值视为重复 */
         private double  dedupThreshold = 0.95;
-        /** 默认 scope（隔离命名空间） */
-        private String  defaultScope   = "global";
         /** 批量写入并发线程数 */
         private int     batchThreads   = 4;
     }
