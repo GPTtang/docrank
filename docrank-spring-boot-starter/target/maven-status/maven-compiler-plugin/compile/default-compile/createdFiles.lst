@@ -1,0 +1,14 @@
+com\memo\docrank\autoconfigure\DocRankProperties$EmbeddingProps$OnnxProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$LanguageProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$RerankerProps$OnnxProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$LuceneProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$IngestProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$EmbeddingProps.class
+com\memo\docrank\autoconfigure\DocRankProperties.class
+com\memo\docrank\autoconfigure\DocRankAutoConfiguration.class
+com\memo\docrank\autoconfigure\DocRankProperties$BackendProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$BackendProps$QdrantProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$RerankerProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$BackendProps$LanceDBProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$ChunkProps.class
+com\memo\docrank\autoconfigure\DocRankProperties$ScoringProps.class

@@ -1,0 +1,30 @@
+{
+  "name": "docrank-sample-bench",
+  "description": "小型示例评估数据集（用于单元测试）",
+  "queries": [
+    {
+      "id": "q1",
+      "query": "Spring Boot 自动配置原理",
+      "relevant": {
+        "doc-spring-1": 3,
+        "doc-spring-2": 2,
+        "doc-spring-3": 1
+      }
+    },
+    {
+      "id": "q2",
+      "query": "Docker 容器化部署",
+      "relevant": {
+        "doc-docker-1": 3,
+        "doc-docker-2": 1
+      }
+    },
+    {
+      "id": "q3",
+      "query": "机器学习特征工程",
+      "relevant": {
+        "doc-ml-1": 2
+      }
+    }
+  ]
+}

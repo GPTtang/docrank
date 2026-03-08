@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.memo.docrank.core.chunking.ChunkingServiceTest
+-------------------------------------------------------------------------------
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.150 s -- in com.memo.docrank.core.chunking.ChunkingServiceTest

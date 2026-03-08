@@ -1,0 +1,6 @@
+com\memo\docrank\langchain4j\DocRankEmbeddingModel$Builder.class
+com\memo\docrank\langchain4j\DocRankHybridRetriever$Builder.class
+com\memo\docrank\langchain4j\DocRankHybridRetriever.class
+com\memo\docrank\langchain4j\DocRankEmbeddingModel.class
+com\memo\docrank\langchain4j\DocRankEmbeddingStore.class
+com\memo\docrank\langchain4j\DocRankEmbeddingStore$Builder.class

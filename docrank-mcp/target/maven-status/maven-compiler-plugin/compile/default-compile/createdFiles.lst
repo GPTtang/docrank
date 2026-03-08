@@ -1,0 +1,7 @@
+com\memo\docrank\mcp\McpTool.class
+com\memo\docrank\mcp\DocRankMcpServer.class
+com\memo\docrank\mcp\McpManifest.class
+com\memo\docrank\mcp\McpToolResult.class
+com\memo\docrank\mcp\McpManifest$McpManifestBuilder.class
+com\memo\docrank\mcp\McpTool$McpToolBuilder.class
+com\memo\docrank\mcp\McpToolResult$McpToolResultBuilder.class
