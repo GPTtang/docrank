@@ -10,10 +10,12 @@ import com.memo.docrank.core.chunking.ChunkingService;
 import com.memo.docrank.core.embedding.EmbeddingProvider;
 import com.memo.docrank.core.embedding.OnnxEmbeddingProvider;
 import com.memo.docrank.core.embedding.RandomEmbeddingProvider;
+import com.memo.docrank.core.embedding.RemoteEmbeddingProvider;
 import com.memo.docrank.core.ingest.ParserRegistry;
 import com.memo.docrank.core.rerank.NoOpReranker;
 import com.memo.docrank.core.rerank.OnnxReranker;
 import com.memo.docrank.core.rerank.Reranker;
+import com.memo.docrank.core.rerank.RemoteReranker;
 import com.memo.docrank.core.search.AdvancedScorer;
 import com.memo.docrank.core.search.BM25Index;
 import com.memo.docrank.core.search.HybridSearcher;
@@ -92,13 +94,31 @@ public class DocRankAutoConfiguration {
     @Bean
     public EmbeddingProvider embeddingProvider(DocRankProperties props) {
         DocRankProperties.EmbeddingProps ep = props.getEmbedding();
-        if ("random".equalsIgnoreCase(ep.getType())) {
-            log.warn("DocRank Embedding: 随机向量模式（仅演示用，无语义检索能力）");
-            return new RandomEmbeddingProvider(ep.getDimension());
-        }
-        String modelPath = ep.getOnnx().getModelPath();
-        log.info("DocRank Embedding: BGE-M3 ONNX @ {}", modelPath);
-        return new OnnxEmbeddingProvider(modelPath, ep.getBatchSize());
+        String type = ep.getType() != null ? ep.getType().toLowerCase() : "onnx";
+        return switch (type) {
+            case "random" -> {
+                log.warn("DocRank Embedding: 随机向量模式（仅演示用，无语义检索能力）");
+                yield new RandomEmbeddingProvider(ep.getDimension());
+            }
+            case "remote" -> {
+                DocRankProperties.EmbeddingProps.RemoteEmbeddingProps r = ep.getRemote();
+                String apiKey = r.getApiKey() != null && !r.getApiKey().isBlank()
+                        ? r.getApiKey() : resolveEnvKey("OPENAI_API_KEY");
+                if (apiKey == null || apiKey.isBlank()) {
+                    log.warn("DocRank Embedding: remote 模式未配置 API Key，" +
+                            "请设置 docrank.embedding.remote.api-key 或 OPENAI_API_KEY 环境变量");
+                }
+                log.info("DocRank Embedding: 远程 API @ {}, model={}", r.getBaseUrl(), r.getModel());
+                yield new RemoteEmbeddingProvider(
+                        apiKey != null ? apiKey : "",
+                        r.getModel(), r.getBaseUrl(), ep.getDimension());
+            }
+            default -> {
+                String modelPath = ep.getOnnx().getModelPath();
+                log.info("DocRank Embedding: BGE-M3 ONNX @ {}", modelPath);
+                yield new OnnxEmbeddingProvider(modelPath, ep.getBatchSize());
+            }
+        };
     }
 
     // ---------------------------------------------------------------- Reranker（bge-reranker-v2-m3 或 NoOp）
@@ -109,9 +129,28 @@ public class DocRankAutoConfiguration {
             log.warn("DocRank Reranker: 已禁用（NoOp）");
             return new NoOpReranker();
         }
+        String type = props.getReranker().getType() != null
+                ? props.getReranker().getType().toLowerCase() : "onnx";
+        if ("remote".equals(type)) {
+            DocRankProperties.RerankerProps.RemoteRerankerProps r = props.getReranker().getRemote();
+            String envVar = "jina".equalsIgnoreCase(r.getProvider()) ? "JINA_API_KEY" : "COHERE_API_KEY";
+            String apiKey = r.getApiKey() != null && !r.getApiKey().isBlank()
+                    ? r.getApiKey() : resolveEnvKey(envVar);
+            if (apiKey == null || apiKey.isBlank()) {
+                log.warn("DocRank Reranker: remote 模式未配置 API Key，" +
+                        "请设置 docrank.reranker.remote.api-key 或 {} 环境变量", envVar);
+            }
+            log.info("DocRank Reranker: 远程 API provider={}, model={}", r.getProvider(), r.getModel());
+            return new RemoteReranker(r.getProvider(), apiKey != null ? apiKey : "",
+                    r.getModel(), r.getBaseUrl());
+        }
         String modelPath = props.getReranker().getOnnx().getModelPath();
         log.info("DocRank Reranker: bge-reranker-v2-m3 ONNX @ {}", modelPath);
         return new OnnxReranker(modelPath);
+    }
+
+    private String resolveEnvKey(String envVar) {
+        return System.getenv(envVar);
     }
 
     // ---------------------------------------------------------------- 语言分析

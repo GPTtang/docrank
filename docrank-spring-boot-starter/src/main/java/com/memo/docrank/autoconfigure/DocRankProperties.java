@@ -52,16 +52,27 @@ public class DocRankProperties {
     // -------------------------------------------------------------- embedding
     @Data
     public static class EmbeddingProps {
-        /** 向量化类型：onnx（生产，需模型文件）| random（演示/测试，不需要模型文件） */
+        /** 向量化类型：onnx | random | remote */
         private String   type      = "onnx";
         private int      dimension = 1024;
         private int      batchSize = 32;
-        private OnnxProps onnx     = new OnnxProps();
+        private OnnxProps   onnx   = new OnnxProps();
+        private RemoteEmbeddingProps remote = new RemoteEmbeddingProps();
 
         @Data
         public static class OnnxProps {
             /** BGE-M3 模型目录，包含 model.onnx + tokenizer.json */
             private String modelPath = "/opt/docrank/models/bge-m3";
+        }
+
+        @Data
+        public static class RemoteEmbeddingProps {
+            /** OpenAI 兼容服务地址，留空使用官方默认 https://api.openai.com */
+            private String baseUrl = "";
+            /** API Key（或通过环境变量 OPENAI_API_KEY 注入） */
+            private String apiKey  = "";
+            /** 模型 ID，例如 text-embedding-3-small */
+            private String model   = "text-embedding-3-small";
         }
     }
 
@@ -69,13 +80,28 @@ public class DocRankProperties {
     @Data
     public static class RerankerProps {
         private boolean  enabled = true;
+        /** 重排序类型：onnx | remote */
+        private String   type    = "onnx";
         private int      topN    = 20;
-        private OnnxProps onnx   = new OnnxProps();
+        private OnnxProps   onnx   = new OnnxProps();
+        private RemoteRerankerProps remote = new RemoteRerankerProps();
 
         @Data
         public static class OnnxProps {
             /** bge-reranker-v2-m3 模型目录，包含 model.onnx + tokenizer.json */
             private String modelPath = "/opt/docrank/models/bge-reranker-v2-m3";
+        }
+
+        @Data
+        public static class RemoteRerankerProps {
+            /** 服务商：cohere | jina */
+            private String provider = "cohere";
+            /** 自定义服务地址，留空使用 provider 默认值 */
+            private String baseUrl  = "";
+            /** API Key（或通过环境变量 COHERE_API_KEY / JINA_API_KEY 注入） */
+            private String apiKey   = "";
+            /** 模型 ID，例如 rerank-multilingual-v3.0 */
+            private String model    = "rerank-multilingual-v3.0";
         }
     }
 
