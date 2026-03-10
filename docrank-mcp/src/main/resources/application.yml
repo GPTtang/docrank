@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: docrank
+
+docrank:
+  backend:
+    type: lancedb
+    lancedb:
+      host: localhost
+      port: 8181
+  embedding:
+    type: onnx
+    dimension: 1024
+    onnx:
+      model-path: /opt/docrank/models/bge-m3
+  reranker:
+    enabled: true
+    onnx:
+      model-path: /opt/docrank/models/bge-reranker-v2-m3
+  lucene:
+    index-path: /opt/docrank/data/lucene-index
+  agent:
+    enabled: false

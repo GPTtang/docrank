@@ -14,9 +14,10 @@
     <name>DocRank MCP Server</name>
 
     <dependencies>
+        <!-- AutoConfiguration（包含 docrank-agent 传递依赖） -->
         <dependency>
             <groupId>com.memo</groupId>
-            <artifactId>docrank-memory</artifactId>
+            <artifactId>docrank-spring-boot-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -30,5 +31,27 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 打包为可执行 Fat JAR -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

@@ -14,9 +14,10 @@
     <name>DocRank Spring Boot Starter</name>
 
     <dependencies>
+        <!-- 核心 + Agent（不依赖 docrank-mcp，避免循环依赖） -->
         <dependency>
             <groupId>com.memo</groupId>
-            <artifactId>docrank-mcp</artifactId>
+            <artifactId>docrank-agent</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

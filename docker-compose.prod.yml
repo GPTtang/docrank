@@ -1,0 +1,62 @@
+services:
+  lancedb:
+    image: lancedb/lancedb:latest
+    container_name: docrank-lancedb
+    ports:
+      - "8181:8181"
+    volumes:
+      - lancedb-data:/data
+    command: ["--host", "0.0.0.0", "--port", "8181", "--storage-path", "/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8181/v1/table/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  docrank:
+    image: memo/docrank:latest
+    build: .
+    container_name: docrank
+    ports:
+      - "8080:8080"
+    depends_on:
+      lancedb:
+        condition: service_healthy
+    volumes:
+      - ./models:/opt/docrank/models:ro   # ONNX 模型目录（需手动下载）
+      - docrank-data:/opt/docrank/data    # Lucene 索引持久化
+    environment:
+      # ── 向量后端：LanceDB
+      DOCRANK_BACKEND_TYPE: lancedb
+      DOCRANK_BACKEND_LANCEDB_HOST: lancedb
+      DOCRANK_BACKEND_LANCEDB_PORT: "8181"
+
+      # ── Embedding：BGE-M3 ONNX
+      DOCRANK_EMBEDDING_TYPE: onnx
+      DOCRANK_EMBEDDING_DIMENSION: "1024"
+      DOCRANK_EMBEDDING_ONNX_MODEL_PATH: /opt/docrank/models/bge-m3
+
+      # ── Reranker：bge-reranker-v2-m3 ONNX
+      DOCRANK_RERANKER_ENABLED: "true"
+      DOCRANK_RERANKER_ONNX_MODEL_PATH: /opt/docrank/models/bge-reranker-v2-m3
+
+      # ── Lucene BM25（持久化）
+      DOCRANK_LUCENE_INDEX_PATH: /opt/docrank/data/lucene-index
+
+      # ── AI Agent
+      DOCRANK_AGENT_ENABLED: "true"
+      DOCRANK_AGENT_LLM_PROVIDER: claude
+      DOCRANK_AGENT_LLM_MODEL: claude-sonnet-4-6
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/mcp/kb_stats || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  lancedb-data:
+  docrank-data:

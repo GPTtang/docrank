@@ -6,6 +6,7 @@ WORKDIR /build
 COPY pom.xml .
 COPY docrank-core/pom.xml docrank-core/
 COPY docrank-memory/pom.xml docrank-memory/
+COPY docrank-agent/pom.xml docrank-agent/
 COPY docrank-mcp/pom.xml docrank-mcp/
 COPY docrank-spring-boot-starter/pom.xml docrank-spring-boot-starter/
 COPY docrank-webui/pom.xml docrank-webui/
@@ -16,7 +17,7 @@ COPY docrank-spring-ai/pom.xml docrank-spring-ai/
 # Pre-download dependencies (cached unless POM changes)
 RUN mvn dependency:go-offline -q
 
-# Copy source and build only docrank-mcp and its required modules
+# Copy source and build only docrank-mcp (includes docrank-agent transitively)
 COPY . .
 RUN mvn clean package -DskipTests -pl docrank-mcp -am -q
 

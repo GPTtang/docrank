@@ -15,6 +15,7 @@ public class DocRankProperties {
     private LanguageProps  language  = new LanguageProps();
     private ScoringProps   scoring   = new ScoringProps();
     private IngestProps    ingest    = new IngestProps();
+    private AgentProps     agent     = new AgentProps();
 
     // ---------------------------------------------------------------- backend
     @Data
@@ -51,6 +52,8 @@ public class DocRankProperties {
     // -------------------------------------------------------------- embedding
     @Data
     public static class EmbeddingProps {
+        /** 向量化类型：onnx（生产，需模型文件）| random（演示/测试，不需要模型文件） */
+        private String   type      = "onnx";
         private int      dimension = 1024;
         private int      batchSize = 32;
         private OnnxProps onnx     = new OnnxProps();
@@ -111,6 +114,37 @@ public class DocRankProperties {
         private boolean mmrEnabled    = true;
         /** MMR 同文档降权系数（每多一个同文档 chunk，乘以此系数） */
         private double  mmrPenalty    = 0.85;
+    }
+
+    // ---------------------------------------------------------------- agent
+    @Data
+    public static class AgentProps {
+        /** 是否启用 AI Agent（需配置 llm.api-key） */
+        private boolean enabled = false;
+        /** 检索知识库的 chunk 数量 */
+        private int     contextTopK      = 5;
+        /** 保留的最大对话轮数 */
+        private int     maxHistoryTurns  = 10;
+        /** 系统 Prompt，留空使用内置默认值 */
+        private String  systemPrompt     = "";
+
+        private LlmProps llm = new LlmProps();
+
+        @Data
+        public static class LlmProps {
+            /** LLM 提供商：claude | openai */
+            private String provider    = "claude";
+            /** 模型 ID，例如 claude-sonnet-4-6 或 gpt-4o */
+            private String model       = "claude-sonnet-4-6";
+            /** API Key（或通过环境变量 ANTHROPIC_API_KEY / OPENAI_API_KEY 注入） */
+            private String apiKey      = "";
+            /** 自定义 Base URL，留空使用官方默认。用于兼容本地模型（Ollama 等） */
+            private String baseUrl     = "";
+            /** 最大输出 token 数 */
+            private int    maxTokens   = 2048;
+            /** 生成温度（0.0~1.0） */
+            private double temperature = 0.7;
+        }
     }
 
     // ---------------------------------------------------------------- ingest

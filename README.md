@@ -5,41 +5,57 @@
 ---
 
 <a name="english"></a>
-# DocRank — Offline Multilingual Semantic Search for AI Agents
+# DocRank — Offline Multilingual RAG Framework for AI Agents
 
-> Plug-and-play local knowledge base with hybrid retrieval (BM25 + Vector + Reranker).
+> Plug-and-play local knowledge base with hybrid retrieval (BM25 + Vector + Reranker) and built-in AI Agent.
 > Zero cloud dependency. Chinese · Japanese · English, all offline.
 
 ## Features
 
-- **Hybrid retrieval** — Lucene BM25 + LanceDB vector search fused with Reciprocal Rank Fusion (RRF)
+- **Hybrid retrieval** — Lucene BM25 + vector search fused with Reciprocal Rank Fusion (RRF)
+- **Built-in AI Agent** — `AgentService.chat(sessionId, question)` completes the full RAG loop (retrieve → prompt → LLM); supports Claude and OpenAI
+- **Multi-turn conversation** — Session history management with configurable max turns
 - **Local AI inference** — BGE-M3 embedding + bge-reranker-v2-m3 reranker via ONNX Runtime (CPU / GPU)
 - **Multilingual** — Chinese (HanLP), Japanese (Kuromoji), English (StandardAnalyzer), auto-detected
-- **Multi-format ingest** — PDF, Markdown, HTML, DOCX, JSON, TXT
-- **MCP-native** — Ships as an MCP (Model Context Protocol) HTTP server; AI agents discover tools automatically
-- **Spring Boot Starter** — One `@Bean` away from integration; configurable via `application.yml`
-- **Fully offline** — No OpenAI, no cloud vector DB, no data leaves your machine
+- **Multi-format ingest** — PDF, Markdown, HTML, DOCX, JSON, TXT, XLSX, PPTX, EPUB, CSV
+- **MCP-native** — Ships as an MCP HTTP server; AI agents discover 9 tools automatically
+- **Swagger UI** — Interactive API docs at `/swagger-ui/index.html`
+- **Spring Boot Starter** — One dependency away from integration; configurable via `application.yml`
+- **Fully offline** — No cloud vector DB, no data leaves your machine
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                   AI Agent / LLM                     │
-│                  MCP HTTP Client                     │
-└─────────────────────┬────────────────────────────────┘
-                      │  REST  /mcp/*
-┌─────────────────────▼────────────────────────────────┐
-│              DocRank MCP Server                      │
-│  kb_search · kb_ingest · kb_ingest_file · kb_delete  │
-└──────┬───────────────────────────────┬───────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    AI Agent / LLM                        │
+│                   MCP HTTP Client                        │
+└──────────────────────┬───────────────────────────────────┘
+                       │  REST  /mcp/*
+┌──────────────────────▼───────────────────────────────────┐
+│                DocRank MCP Server                        │
+│  kb_search · kb_ingest · kb_ingest_file · kb_delete      │
+│  agent_chat · agent_new_session · agent_clear_session    │
+└──────┬───────────────────────────────┬────────────────────┘
        │                               │
-┌──────▼──────┐               ┌────────▼────────┐
-│  Lucene BM25│  ──── RRF ──▶ │ ONNX Reranker  │
-│  (on disk)  │               │ bge-reranker-   │
-└─────────────┘               │ v2-m3           │
-┌─────────────┐               └────────▲────────┘
-│  LanceDB    │  vectorSearch ─────────┘
-│  (HTTP API) │
+┌──────▼──────────────────────────┐   │
+│         docrank-agent           │   │
+│  AgentService                   │   │
+│    ├─ KnowledgeBaseService      │◀──┘
+│    ├─ ConversationSession       │
+│    ├─ PromptBuilder             │
+│    └─ LlmProvider               │
+│         ├─ ClaudeProvider       │
+│         └─ OpenAiProvider       │
+└──────┬──────────────────────────┘
+       │ search
+┌──────▼──────┐               ┌─────────────────┐
+│ Lucene BM25 │  ── RRF ────▶ │  ONNX Reranker  │
+│  (on disk)  │               │ bge-reranker-v2  │
+└─────────────┘               └────────▲────────┘
+┌─────────────┐                        │
+│  LanceDB /  │  vectorSearch ─────────┘
+│  Qdrant /   │
+│  pgvector   │
 └─────────────┘
        ▲
 ┌──────┴───────────────────────────┐
@@ -50,51 +66,45 @@
 
 ## Quick Start
 
-### Prerequisites
-
-| Component | Version |
-|-----------|---------|
-| Java | 17+ |
-| Maven | 3.6+ |
-| LanceDB | latest (`pip install lancedb`) |
-| BGE-M3 ONNX model | [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) |
-| bge-reranker-v2-m3 ONNX | [BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) |
-
-### 1. Start LanceDB
+### Option A — Docker (no model files required)
 
 ```bash
-pip install lancedb
-lancedb --host 0.0.0.0 --port 8181
+# Clone
+git clone https://github.com/GPTtang/docrank && cd docrank
+
+# Set your LLM API key (Claude or OpenAI)
+export ANTHROPIC_API_KEY=sk-ant-xxx
+
+# Start (InMemory backend + lightweight embedding, ready in ~5s)
+docker compose up -d
+
+# Swagger UI
+open http://localhost:8080/swagger-ui/index.html
 ```
 
-### 2. Download ONNX Models
+Ingest a document and ask a question:
 
 ```bash
-# Install huggingface-hub CLI
-pip install huggingface-hub
+curl -X POST http://localhost:8080/mcp/kb_ingest \
+  -H "Content-Type: application/json" \
+  -d '{"title":"My Doc","content":"DocRank supports LanceDB, Qdrant, pgvector backends."}'
 
-# Download BGE-M3 (embedding)
-huggingface-cli download BAAI/bge-m3 --include "onnx/*" "tokenizer*" \
-    --local-dir /opt/docrank/models/bge-m3
-
-# Download bge-reranker-v2-m3 (reranker)
-huggingface-cli download BAAI/bge-reranker-v2-m3 --include "onnx/*" "tokenizer*" \
-    --local-dir /opt/docrank/models/bge-reranker-v2-m3
+curl -X POST http://localhost:8080/mcp/agent_chat \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What backends are supported?","session_id":"s1"}'
 ```
 
-Expected model directory layout:
-```
-/opt/docrank/models/
-  bge-m3/
-    model.onnx
-    tokenizer.json
-    tokenizer_config.json
-  bge-reranker-v2-m3/
-    model.onnx
-    tokenizer.json
+### Option B — Production Docker (LanceDB + ONNX models)
+
+```bash
+# Download ONNX models first (see "ONNX Models" section below)
+export ANTHROPIC_API_KEY=sk-ant-xxx
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-### 3. Add Dependency
+### Option C — Spring Boot Starter
+
+**1. Add dependency**
 
 ```xml
 <dependency>
@@ -104,107 +114,152 @@ Expected model directory layout:
 </dependency>
 ```
 
-### 4. Configure `application.yml`
+**2. Configure `application.yml`**
 
 ```yaml
 docrank:
   backend:
+    type: lancedb           # lancedb | qdrant | pgvector | memory
     lancedb:
       host: localhost
       port: 8181
-      table-name: my_knowledge_base
   embedding:
+    type: onnx              # onnx | random (random = no model files, demo only)
     onnx:
       model-path: /opt/docrank/models/bge-m3
   reranker:
+    enabled: true
     onnx:
       model-path: /opt/docrank/models/bge-reranker-v2-m3
   lucene:
     index-path: /opt/docrank/data/lucene-index
-  chunk:
-    size: 512
-    overlap: 64
+  agent:
+    enabled: true
+    llm:
+      provider: claude      # claude | openai
+      model: claude-sonnet-4-6
+      api-key: ${ANTHROPIC_API_KEY}
 ```
 
-### 5. Use via MCP API
-
-```bash
-# Ingest a document
-curl -X POST http://localhost:8080/mcp/kb_ingest \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Spring Boot Guide", "content": "Spring Boot makes ...", "tags": ["java"]}'
-
-# Search
-curl -X POST http://localhost:8080/mcp/kb_search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "how to configure Spring Boot", "top_k": 5}'
-
-# Upload a file
-curl -X POST http://localhost:8080/mcp/kb_ingest_file \
-  -F "file=@document.pdf" \
-  -F "tags=java,spring"
-```
-
-### 6. Use via Java API
+**3. Use via Java API**
 
 ```java
-@Autowired
-KnowledgeBaseService kb;
-
-// Ingest
-kb.ingestText("My Doc", "content here...", List.of("tag1"), Map.of());
-
-// Search
+// Knowledge base
+@Autowired KnowledgeBaseService kb;
+kb.ingestText("My Doc", "content...", List.of("tag1"), Map.of());
 List<SearchResult> results = kb.search("your query", 5, Map.of());
-results.forEach(r -> System.out.println(r.getChunk().getChunkText()));
+
+// AI Agent (RAG Q&A)
+@Autowired AgentService agent;
+AgentChatResult result = agent.chat("session-1", "What is DocRank?");
+System.out.println(result.answer());
+result.sources().forEach(s -> System.out.println(s.getChunk().getTitle()));
 ```
 
-## MCP Tool Reference
+## ONNX Models
+
+```bash
+pip install huggingface-hub
+
+# BGE-M3 (embedding, 1024-dim)
+huggingface-cli download BAAI/bge-m3 --include "onnx/*" "tokenizer*" \
+    --local-dir ./models/bge-m3
+
+# bge-reranker-v2-m3 (reranker)
+huggingface-cli download BAAI/bge-reranker-v2-m3 --include "onnx/*" "tokenizer*" \
+    --local-dir ./models/bge-reranker-v2-m3
+```
+
+```
+models/
+  bge-m3/
+    model.onnx
+    tokenizer.json
+  bge-reranker-v2-m3/
+    model.onnx
+    tokenizer.json
+```
+
+## API Reference
+
+### Swagger UI
+
+```
+http://localhost:8080/swagger-ui/index.html
+http://localhost:8080/v3/api-docs
+```
+
+### MCP Endpoints
+
+**Knowledge Base**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/mcp/tools` | GET | List all tools (agent auto-discovery) |
 | `/mcp/kb_search` | POST | Hybrid search (BM25 + Vector + Reranker) |
 | `/mcp/kb_ingest` | POST | Ingest plain text |
-| `/mcp/kb_ingest_file` | POST | Upload file (PDF/MD/HTML/DOCX/TXT/JSON) |
+| `/mcp/kb_ingest_file` | POST | Upload file (PDF/MD/HTML/DOCX/TXT/JSON/XLSX/PPTX/EPUB/CSV) |
 | `/mcp/kb_delete` | POST | Delete document by ID |
 | `/mcp/kb_stats` | GET | Index statistics |
+| `/mcp/kb_reembed` | POST | Re-vectorize all chunks (after model upgrade) |
+
+**AI Agent**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mcp/agent_chat` | POST | RAG Q&A with session history |
+| `/mcp/agent_new_session` | POST | Create a new conversation session |
+| `/mcp/agent_clear_session` | POST | Clear session history |
 
 ## Modules
 
 | Module | Description |
 |--------|-------------|
 | `docrank-core` | Core engine: parsing, chunking, embedding, BM25, vector, reranking |
-| `docrank-memory` | High-level knowledge base service |
-| `docrank-mcp` | MCP HTTP server (Spring REST Controller) |
+| `docrank-memory` | High-level knowledge base service (`KnowledgeBaseService`) |
+| `docrank-agent` | AI Agent: RAG Q&A, LLM providers, session management |
+| `docrank-mcp` | MCP HTTP server + Swagger UI |
 | `docrank-spring-boot-starter` | Spring Boot auto-configuration |
+| `docrank-langchain4j` | LangChain4j adapter |
+| `docrank-spring-ai` | Spring AI adapter |
+| `docrank-eval` | Retrieval evaluation (NDCG, MRR, MAP) |
 
-## Build & Test
+## Docker Compose
 
-```bash
-# Build all modules
-mvn clean install -DskipTests
+| File | Containers | Use Case |
+|------|-----------|----------|
+| `docker-compose.yml` | 1 (docrank) | Quick start, no model files needed |
+| `docker-compose.prod.yml` | 2 (docrank + lancedb) | Production, persistent storage |
 
-# Run tests (docrank-core, no model files required)
-mvn test -pl docrank-core
-```
-
-## Configuration Reference
+## Full Configuration Reference
 
 ```yaml
 docrank:
-  backend.lancedb:
-    host: localhost          # LanceDB host
-    port: 8181               # LanceDB port
-    table-name: docrank_memories
+  backend:
+    type: lancedb            # lancedb | qdrant | pgvector | memory
+    lancedb:
+      host: localhost
+      port: 8181
+      table-name: docrank_memories
+    qdrant:
+      host: localhost
+      port: 6333
+      collection-name: docrank_memories
+    pgvector:
+      jdbc-url: jdbc:postgresql://localhost:5432/docrank
+      username: postgres
+      password: ""
   embedding:
-    dimension: 1024          # BGE-M3 output dimension
-    batch-size: 32           # Embedding batch size
-    onnx.model-path: /opt/docrank/models/bge-m3
+    type: onnx               # onnx | random
+    dimension: 1024
+    batch-size: 32
+    onnx:
+      model-path: /opt/docrank/models/bge-m3
   reranker:
     enabled: true
-    top-n: 20                # Candidates fed to reranker
-    onnx.model-path: /opt/docrank/models/bge-reranker-v2-m3
+    top-n: 20
+    onnx:
+      model-path: /opt/docrank/models/bge-reranker-v2-m3
   lucene:
     index-path: /opt/docrank/data/lucene-index
     ram-buffer-mb: 64
@@ -213,6 +268,33 @@ docrank:
     overlap: 64
   language:
     default-lang: auto       # auto | zh | ja | en
+  scoring:
+    recency-lambda: 0.005
+    min-score: 0.0
+    mmr-enabled: true
+    mmr-penalty: 0.85
+  ingest:
+    dedup-enabled: false
+    dedup-threshold: 0.95
+  agent:
+    enabled: false
+    context-top-k: 5
+    max-history-turns: 10
+    system-prompt: ""        # leave empty for built-in default
+    llm:
+      provider: claude       # claude | openai
+      model: claude-sonnet-4-6
+      api-key: ${ANTHROPIC_API_KEY:}
+      base-url: ""           # custom base URL for OpenAI-compatible local models
+      max-tokens: 2048
+      temperature: 0.7
+```
+
+## Build & Test
+
+```bash
+mvn clean install -DskipTests
+mvn test -pl docrank-core,docrank-agent
 ```
 
 ## License
@@ -222,41 +304,57 @@ Apache 2.0
 ---
 
 <a name="中文"></a>
-# DocRank — 面向 AI Agent 的离线多语言语义搜索引擎
+# DocRank — 面向 AI Agent 的离线多语言 RAG 框架
 
-> 即插即用的本地知识库，混合检索（BM25 + 向量 + 重排序）。
+> 即插即用的本地知识库，混合检索（BM25 + 向量 + 重排序）+ 内置 AI Agent 问答。
 > 零云依赖，完全离线，支持中文 · 日文 · 英文。
 
 ## 特性
 
-- **混合检索** — Lucene BM25 与 LanceDB 向量检索并行召回，RRF 融合排序
+- **混合检索** — Lucene BM25 与向量检索并行召回，RRF 融合排序
+- **内置 AI Agent** — `AgentService.chat(sessionId, question)` 完成完整 RAG 闭环（检索 → Prompt → LLM 生成），支持 Claude 和 OpenAI
+- **多轮对话** — 会话历史管理，可配置最大轮数
 - **本地 AI 推理** — BGE-M3 Embedding + bge-reranker-v2-m3 重排序，基于 ONNX Runtime 完全离线（支持 CPU / GPU）
 - **多语言** — 中文（HanLP 分词）、日文（Kuromoji）、英文（StandardAnalyzer），自动语言检测
-- **多格式写入** — 支持 PDF、Markdown、HTML、DOCX、JSON、TXT
-- **MCP 原生** — 内置 MCP（Model Context Protocol）HTTP Server，AI Agent 可自动发现工具
-- **Spring Boot Starter** — 一行配置即可集成，通过 `application.yml` 灵活配置
-- **完全离线** — 无需 OpenAI、无需云向量库，数据不出本机
+- **多格式写入** — PDF、Markdown、HTML、DOCX、JSON、TXT、XLSX、PPTX、EPUB、CSV
+- **MCP 原生** — 内置 MCP HTTP Server，AI Agent 可自动发现 9 个工具
+- **Swagger UI** — 交互式接口文档，访问 `/swagger-ui/index.html`
+- **Spring Boot Starter** — 一行依赖即可集成，通过 `application.yml` 灵活配置
+- **完全离线** — 无需云向量库，数据不出本机
 
 ## 架构
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                  AI Agent / LLM                        │
-│               MCP HTTP 客户端                          │
-└──────────────────────┬─────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    AI Agent / LLM                        │
+│                   MCP HTTP 客户端                         │
+└──────────────────────┬───────────────────────────────────┘
                        │  REST  /mcp/*
-┌──────────────────────▼─────────────────────────────────┐
-│              DocRank MCP Server                        │
-│  kb_search · kb_ingest · kb_ingest_file · kb_delete    │
-└──────┬────────────────────────────────┬────────────────┘
-       │                                │
-┌──────▼──────┐                ┌────────▼────────┐
-│ Lucene BM25 │  ──── RRF ───▶ │  ONNX 重排序   │
-│  （磁盘索引）│                │ bge-reranker-   │
-└─────────────┘                │ v2-m3           │
-┌─────────────┐                └────────▲────────┘
-│  LanceDB    │  向量检索 ──────────────┘
-│ （HTTP API）│
+┌──────────────────────▼───────────────────────────────────┐
+│                DocRank MCP Server                        │
+│  kb_search · kb_ingest · kb_ingest_file · kb_delete      │
+│  agent_chat · agent_new_session · agent_clear_session    │
+└──────┬───────────────────────────────┬────────────────────┘
+       │                               │
+┌──────▼──────────────────────────┐   │
+│         docrank-agent           │   │
+│  AgentService                   │   │
+│    ├─ KnowledgeBaseService      │◀──┘
+│    ├─ ConversationSession       │
+│    ├─ PromptBuilder             │
+│    └─ LlmProvider               │
+│         ├─ ClaudeProvider       │
+│         └─ OpenAiProvider       │
+└──────┬──────────────────────────┘
+       │ 检索
+┌──────▼──────┐               ┌─────────────────┐
+│ Lucene BM25 │  ── RRF ────▶ │  ONNX 重排序    │
+│  （磁盘索引）│               │ bge-reranker-v2  │
+└─────────────┘               └────────▲────────┘
+┌─────────────┐                        │
+│  LanceDB /  │  向量检索 ─────────────┘
+│  Qdrant /   │
+│  pgvector   │
 └─────────────┘
        ▲
 ┌──────┴──────────────────────────────┐
@@ -267,50 +365,44 @@ Apache 2.0
 
 ## 快速开始
 
-### 环境要求
-
-| 组件 | 版本要求 |
-|------|---------|
-| Java | 17+ |
-| Maven | 3.6+ |
-| LanceDB | 最新版（`pip install lancedb`） |
-| BGE-M3 ONNX 模型 | [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) |
-| bge-reranker-v2-m3 ONNX | [BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) |
-
-### 1. 启动 LanceDB
+### 方式 A — Docker（无需模型文件）
 
 ```bash
-pip install lancedb
-lancedb --host 0.0.0.0 --port 8181
+git clone https://github.com/GPTtang/docrank && cd docrank
+
+# 设置 LLM API Key（Claude 或 OpenAI）
+export ANTHROPIC_API_KEY=sk-ant-xxx
+
+# 启动（InMemory 后端 + 轻量 Embedding，约 5 秒就绪）
+docker compose up -d
+
+# 访问 Swagger UI
+open http://localhost:8080/swagger-ui/index.html
 ```
 
-### 2. 下载 ONNX 模型
+写入文档并提问：
 
 ```bash
-pip install huggingface-hub
+curl -X POST http://localhost:8080/mcp/kb_ingest \
+  -H "Content-Type: application/json" \
+  -d '{"title":"介绍","content":"DocRank 支持 LanceDB、Qdrant、pgvector 三种向量后端。"}'
 
-# 下载 BGE-M3 Embedding 模型
-huggingface-cli download BAAI/bge-m3 --include "onnx/*" "tokenizer*" \
-    --local-dir /opt/docrank/models/bge-m3
-
-# 下载 bge-reranker-v2-m3 重排序模型
-huggingface-cli download BAAI/bge-reranker-v2-m3 --include "onnx/*" "tokenizer*" \
-    --local-dir /opt/docrank/models/bge-reranker-v2-m3
+curl -X POST http://localhost:8080/mcp/agent_chat \
+  -H "Content-Type: application/json" \
+  -d '{"question":"支持哪些向量后端？","session_id":"s1"}'
 ```
 
-模型目录结构：
-```
-/opt/docrank/models/
-  bge-m3/
-    model.onnx
-    tokenizer.json
-    tokenizer_config.json
-  bge-reranker-v2-m3/
-    model.onnx
-    tokenizer.json
+### 方式 B — 生产 Docker（LanceDB + ONNX 模型）
+
+```bash
+# 先下载 ONNX 模型（见下方"ONNX 模型"章节）
+export ANTHROPIC_API_KEY=sk-ant-xxx
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-### 3. 添加依赖
+### 方式 C — Spring Boot Starter
+
+**1. 添加依赖**
 
 ```xml
 <dependency>
@@ -320,115 +412,169 @@ huggingface-cli download BAAI/bge-reranker-v2-m3 --include "onnx/*" "tokenizer*"
 </dependency>
 ```
 
-### 4. 配置 `application.yml`
+**2. 配置 `application.yml`**
 
 ```yaml
 docrank:
   backend:
+    type: lancedb           # lancedb | qdrant | pgvector | memory
     lancedb:
       host: localhost
       port: 8181
-      table-name: my_knowledge_base
   embedding:
+    type: onnx              # onnx | random（random = 无需模型文件，仅演示）
     onnx:
       model-path: /opt/docrank/models/bge-m3
   reranker:
+    enabled: true
     onnx:
       model-path: /opt/docrank/models/bge-reranker-v2-m3
   lucene:
     index-path: /opt/docrank/data/lucene-index
-  chunk:
-    size: 512    # 中日文按字符数，英文按词数
-    overlap: 64
+  agent:
+    enabled: true
+    llm:
+      provider: claude      # claude | openai
+      model: claude-sonnet-4-6
+      api-key: ${ANTHROPIC_API_KEY}
 ```
 
-### 5. 通过 MCP API 使用
-
-```bash
-# 写入文本
-curl -X POST http://localhost:8080/mcp/kb_ingest \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Spring Boot 指南", "content": "Spring Boot 是...", "tags": ["java"]}'
-
-# 混合语义搜索
-curl -X POST http://localhost:8080/mcp/kb_search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "如何配置 Spring Boot", "top_k": 5}'
-
-# 上传文件
-curl -X POST http://localhost:8080/mcp/kb_ingest_file \
-  -F "file=@文档.pdf" \
-  -F "tags=java,spring"
-```
-
-### 6. 通过 Java API 使用
+**3. Java API 使用**
 
 ```java
-@Autowired
-KnowledgeBaseService kb;
+// 知识库操作
+@Autowired KnowledgeBaseService kb;
+kb.ingestText("文档标题", "内容...", List.of("tag1"), Map.of());
+List<SearchResult> results = kb.search("查询语句", 5, Map.of());
 
-// 写入
-kb.ingestText("我的文档", "内容...", List.of("tag1"), Map.of());
-
-// 搜索
-List<SearchResult> results = kb.search("你的查询", 5, Map.of());
-results.forEach(r -> System.out.println(r.getChunk().getChunkText()));
+// AI Agent 问答
+@Autowired AgentService agent;
+AgentChatResult result = agent.chat("session-1", "DocRank 是什么？");
+System.out.println(result.answer());
+result.sources().forEach(s -> System.out.println(s.getChunk().getTitle()));
 ```
 
-## MCP 接口说明
+## ONNX 模型下载
+
+```bash
+pip install huggingface-hub
+
+# BGE-M3（向量化，1024 维）
+huggingface-cli download BAAI/bge-m3 --include "onnx/*" "tokenizer*" \
+    --local-dir ./models/bge-m3
+
+# bge-reranker-v2-m3（重排序）
+huggingface-cli download BAAI/bge-reranker-v2-m3 --include "onnx/*" "tokenizer*" \
+    --local-dir ./models/bge-reranker-v2-m3
+```
+
+## API 文档
+
+### Swagger UI
+
+```
+http://localhost:8080/swagger-ui/index.html
+http://localhost:8080/v3/api-docs
+```
+
+### MCP 接口说明
+
+**知识库**
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
 | `/mcp/tools` | GET | 工具清单（Agent 自动发现） |
 | `/mcp/kb_search` | POST | 混合语义搜索（BM25 + 向量 + 重排序） |
 | `/mcp/kb_ingest` | POST | 写入纯文本 |
-| `/mcp/kb_ingest_file` | POST | 上传文件（PDF/MD/HTML/DOCX/TXT/JSON） |
+| `/mcp/kb_ingest_file` | POST | 上传文件（PDF/MD/HTML/DOCX/TXT/JSON/XLSX/PPTX/EPUB/CSV） |
 | `/mcp/kb_delete` | POST | 按文档 ID 删除 |
 | `/mcp/kb_stats` | GET | 索引状态统计 |
+| `/mcp/kb_reembed` | POST | 重新向量化（升级模型后使用） |
+
+**AI Agent**
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/mcp/agent_chat` | POST | RAG 问答（含会话历史） |
+| `/mcp/agent_new_session` | POST | 创建新会话 |
+| `/mcp/agent_clear_session` | POST | 清空会话历史 |
 
 ## 模块说明
 
 | 模块 | 说明 |
 |------|------|
 | `docrank-core` | 核心引擎：解析、分块、向量化、BM25、向量检索、重排序 |
-| `docrank-memory` | 高层知识库服务（KnowledgeBaseService） |
-| `docrank-mcp` | MCP HTTP Server（Spring REST Controller） |
+| `docrank-memory` | 高层知识库服务（`KnowledgeBaseService`） |
+| `docrank-agent` | AI Agent：RAG 问答、LLM 提供商、会话管理 |
+| `docrank-mcp` | MCP HTTP Server + Swagger UI |
 | `docrank-spring-boot-starter` | Spring Boot 自动配置 |
+| `docrank-langchain4j` | LangChain4j 适配器 |
+| `docrank-spring-ai` | Spring AI 适配器 |
+| `docrank-eval` | 检索质量评估（NDCG、MRR、MAP） |
+
+## Docker Compose 说明
+
+| 文件 | 容器数 | 适用场景 |
+|------|--------|---------|
+| `docker-compose.yml` | 1（docrank） | 快速体验，无需模型文件 |
+| `docker-compose.prod.yml` | 2（docrank + lancedb） | 生产部署，持久化存储 |
+
+## 完整配置项
+
+```yaml
+docrank:
+  backend:
+    type: lancedb            # lancedb | qdrant | pgvector | memory
+    lancedb:
+      host: localhost
+      port: 8181
+      table-name: docrank_memories
+  embedding:
+    type: onnx               # onnx | random
+    dimension: 1024
+    batch-size: 32
+    onnx:
+      model-path: /opt/docrank/models/bge-m3
+  reranker:
+    enabled: true
+    top-n: 20
+    onnx:
+      model-path: /opt/docrank/models/bge-reranker-v2-m3
+  lucene:
+    index-path: /opt/docrank/data/lucene-index
+    ram-buffer-mb: 64
+  chunk:
+    size: 512                # 中日文：字符数；英文：词数
+    overlap: 64
+  language:
+    default-lang: auto       # auto | zh | ja | en
+  scoring:
+    recency-lambda: 0.005
+    min-score: 0.0
+    mmr-enabled: true
+    mmr-penalty: 0.85
+  ingest:
+    dedup-enabled: false
+    dedup-threshold: 0.95
+  agent:
+    enabled: false
+    context-top-k: 5
+    max-history-turns: 10
+    system-prompt: ""        # 留空使用内置默认值
+    llm:
+      provider: claude       # claude | openai
+      model: claude-sonnet-4-6
+      api-key: ${ANTHROPIC_API_KEY:}
+      base-url: ""           # 兼容 OpenAI 协议的本地模型（Ollama 等）可自定义
+      max-tokens: 2048
+      temperature: 0.7
+```
 
 ## 构建与测试
 
 ```bash
-# 构建全部模块
 mvn clean install -DskipTests
-
-# 运行测试（docrank-core，无需模型文件）
-mvn test -pl docrank-core
-```
-
-## 配置项说明
-
-```yaml
-docrank:
-  backend.lancedb:
-    host: localhost          # LanceDB 主机
-    port: 8181               # LanceDB 端口
-    table-name: docrank_memories
-  embedding:
-    dimension: 1024          # BGE-M3 输出维度
-    batch-size: 32           # 向量化批次大小
-    onnx.model-path: /opt/docrank/models/bge-m3
-  reranker:
-    enabled: true
-    top-n: 20                # 送入重排序的候选数
-    onnx.model-path: /opt/docrank/models/bge-reranker-v2-m3
-  lucene:
-    index-path: /opt/docrank/data/lucene-index
-    ram-buffer-mb: 64        # IndexWriter 内存缓冲区（MB）
-  chunk:
-    size: 512                # 中日文：字符数；英文：词数
-    overlap: 64              # 滑窗重叠长度
-  language:
-    default-lang: auto       # auto | zh | ja | en
+mvn test -pl docrank-core,docrank-agent
 ```
 
 ## 开源协议
@@ -438,95 +584,55 @@ Apache 2.0
 ---
 
 <a name="日本語"></a>
-# DocRank — AIエージェント向けオフライン多言語セマンティック検索エンジン
+# DocRank — AIエージェント向けオフライン多言語RAGフレームワーク
 
-> ハイブリッド検索（BM25 + ベクトル + リランキング）によるローカル知識ベース。
+> ハイブリッド検索（BM25 + ベクトル + リランク）+ 内蔵AIエージェントによるローカル知識ベース。
 > クラウド不要・完全オフライン。中国語・日本語・英語に対応。
 
 ## 特徴
 
-- **ハイブリッド検索** — Lucene BM25 と LanceDB ベクトル検索を並列実行し、RRF（Reciprocal Rank Fusion）で統合
-- **ローカルAI推論** — BGE-M3 Embedding + bge-reranker-v2-m3 リランカーを ONNX Runtime で完全オフライン実行（CPU / GPU 対応）
+- **ハイブリッド検索** — Lucene BM25 + ベクトル検索を並列実行し、RRF で統合
+- **内蔵AIエージェント** — `AgentService.chat(sessionId, question)` でRAGの全工程を完結（検索 → Prompt → LLM生成）。Claude / OpenAI 対応
+- **マルチターン会話** — セッション履歴管理（最大ターン数設定可能）
+- **ローカルAI推論** — BGE-M3 + bge-reranker-v2-m3 を ONNX Runtime で完全オフライン実行（CPU / GPU 対応）
 - **多言語対応** — 中国語（HanLP）、日本語（Kuromoji）、英語（StandardAnalyzer）、言語自動検出
-- **マルチフォーマット取り込み** — PDF・Markdown・HTML・DOCX・JSON・TXT
-- **MCP ネイティブ** — MCP（Model Context Protocol）HTTP サーバーとして動作。AIエージェントがツールを自動検出
-- **Spring Boot Starter** — `application.yml` で設定するだけで即使用可能
-- **完全オフライン** — OpenAI 不要・クラウドベクターDB 不要・データが外部に出ない
-
-## アーキテクチャ
-
-```
-┌─────────────────────────────────────────────────────────┐
-│               AI Agent / LLM                            │
-│            MCP HTTP クライアント                         │
-└──────────────────────┬──────────────────────────────────┘
-                       │  REST  /mcp/*
-┌──────────────────────▼──────────────────────────────────┐
-│             DocRank MCP Server                          │
-│  kb_search · kb_ingest · kb_ingest_file · kb_delete     │
-└──────┬────────────────────────────────┬─────────────────┘
-       │                                │
-┌──────▼──────┐                ┌────────▼────────┐
-│ Lucene BM25 │  ──── RRF ───▶ │ ONNX リランカー │
-│  （ディスク）│                │ bge-reranker-   │
-└─────────────┘                │ v2-m3           │
-┌─────────────┐                └────────▲────────┘
-│  LanceDB    │  ベクトル検索 ───────────┘
-│ (HTTP API)  │
-└─────────────┘
-       ▲
-┌──────┴──────────────────────────────────┐
-│  取り込みパイプライン                    │
-│  パーサー → チャンク分割 → BGE-M3 ONNX  │
-└─────────────────────────────────────────┘
-```
+- **マルチフォーマット** — PDF・Markdown・HTML・DOCX・JSON・TXT・XLSX・PPTX・EPUB・CSV
+- **MCP ネイティブ** — MCP HTTP サーバーとして動作、AIエージェントが9つのツールを自動検出
+- **Swagger UI** — `/swagger-ui/index.html` でインタラクティブなAPIドキュメント
+- **Spring Boot Starter** — 依存関係を1つ追加するだけで統合完了
 
 ## クイックスタート
 
-### 前提条件
-
-| コンポーネント | バージョン |
-|--------------|-----------|
-| Java | 17以上 |
-| Maven | 3.6以上 |
-| LanceDB | 最新版（`pip install lancedb`） |
-| BGE-M3 ONNX モデル | [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) |
-| bge-reranker-v2-m3 ONNX | [BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) |
-
-### 1. LanceDB の起動
+### 方法 A — Docker（モデルファイル不要）
 
 ```bash
-pip install lancedb
-lancedb --host 0.0.0.0 --port 8181
-```
+git clone https://github.com/GPTtang/docrank && cd docrank
 
-### 2. ONNX モデルのダウンロード
+export ANTHROPIC_API_KEY=sk-ant-xxx
+
+docker compose up -d
+
+open http://localhost:8080/swagger-ui/index.html
+```
 
 ```bash
-pip install huggingface-hub
+curl -X POST http://localhost:8080/mcp/kb_ingest \
+  -H "Content-Type: application/json" \
+  -d '{"title":"DocRank","content":"DocRank supports LanceDB, Qdrant, pgvector."}'
 
-# BGE-M3 Embedding モデル
-huggingface-cli download BAAI/bge-m3 --include "onnx/*" "tokenizer*" \
-    --local-dir /opt/docrank/models/bge-m3
-
-# bge-reranker-v2-m3 リランキングモデル
-huggingface-cli download BAAI/bge-reranker-v2-m3 --include "onnx/*" "tokenizer*" \
-    --local-dir /opt/docrank/models/bge-reranker-v2-m3
+curl -X POST http://localhost:8080/mcp/agent_chat \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What backends are supported?","session_id":"s1"}'
 ```
 
-モデルディレクトリ構成：
-```
-/opt/docrank/models/
-  bge-m3/
-    model.onnx
-    tokenizer.json
-    tokenizer_config.json
-  bge-reranker-v2-m3/
-    model.onnx
-    tokenizer.json
+### 方法 B — 本番 Docker（LanceDB + ONNXモデル）
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-xxx
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-### 3. 依存関係の追加
+### 方法 C — Spring Boot Starter
 
 ```xml
 <dependency>
@@ -536,116 +642,42 @@ huggingface-cli download BAAI/bge-reranker-v2-m3 --include "onnx/*" "tokenizer*"
 </dependency>
 ```
 
-### 4. `application.yml` の設定
-
-```yaml
-docrank:
-  backend:
-    lancedb:
-      host: localhost
-      port: 8181
-      table-name: my_knowledge_base
-  embedding:
-    onnx:
-      model-path: /opt/docrank/models/bge-m3
-  reranker:
-    onnx:
-      model-path: /opt/docrank/models/bge-reranker-v2-m3
-  lucene:
-    index-path: /opt/docrank/data/lucene-index
-  chunk:
-    size: 512
-    overlap: 64
-```
-
-### 5. MCP API の利用
-
-```bash
-# テキストの取り込み
-curl -X POST http://localhost:8080/mcp/kb_ingest \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Spring Bootガイド", "content": "Spring Bootは...", "tags": ["java"]}'
-
-# ハイブリッド意味検索
-curl -X POST http://localhost:8080/mcp/kb_search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "Spring Bootの設定方法", "top_k": 5}'
-
-# ファイルのアップロード
-curl -X POST http://localhost:8080/mcp/kb_ingest_file \
-  -F "file=@document.pdf" \
-  -F "tags=java,spring"
-```
-
-### 6. Java API の利用
-
 ```java
-@Autowired
-KnowledgeBaseService kb;
-
-// 取り込み
-kb.ingestText("マイドキュメント", "内容...", List.of("tag1"), Map.of());
-
-// 検索
-List<SearchResult> results = kb.search("クエリ文字列", 5, Map.of());
-results.forEach(r -> System.out.println(r.getChunk().getChunkText()));
+@Autowired AgentService agent;
+AgentChatResult result = agent.chat("session-1", "DocRankとは何ですか？");
+System.out.println(result.answer());
 ```
 
 ## MCP ツール一覧
 
+**知識ベース**
+
 | エンドポイント | メソッド | 説明 |
 |--------------|---------|------|
-| `/mcp/tools` | GET | ツール一覧（エージェント自動検出用） |
 | `/mcp/kb_search` | POST | ハイブリッド検索（BM25 + ベクトル + リランク） |
 | `/mcp/kb_ingest` | POST | テキスト取り込み |
-| `/mcp/kb_ingest_file` | POST | ファイルアップロード（PDF/MD/HTML/DOCX/TXT/JSON） |
-| `/mcp/kb_delete` | POST | ドキュメントIDで削除 |
-| `/mcp/kb_stats` | GET | インデックス統計情報 |
+| `/mcp/kb_ingest_file` | POST | ファイルアップロード（PDF/MD/HTML/DOCX 他） |
+| `/mcp/kb_delete` | POST | ドキュメント削除 |
+| `/mcp/kb_stats` | GET | インデックス統計 |
+| `/mcp/kb_reembed` | POST | 全チャンク再ベクトル化 |
+
+**AIエージェント**
+
+| エンドポイント | メソッド | 説明 |
+|--------------|---------|------|
+| `/mcp/agent_chat` | POST | RAG 問答（会話履歴付き） |
+| `/mcp/agent_new_session` | POST | 新しいセッションを作成 |
+| `/mcp/agent_clear_session` | POST | セッション履歴をクリア |
 
 ## モジュール構成
 
 | モジュール | 説明 |
 |-----------|------|
-| `docrank-core` | コアエンジン：パース・チャンク分割・Embedding・BM25・ベクトル検索・リランク |
-| `docrank-memory` | ハイレベル知識ベースサービス（KnowledgeBaseService） |
-| `docrank-mcp` | MCP HTTP サーバー（Spring REST Controller） |
+| `docrank-core` | コアエンジン：パース・チャンク・Embedding・BM25・ベクトル検索・リランク |
+| `docrank-memory` | 高レベル知識ベースサービス |
+| `docrank-agent` | AIエージェント：RAG問答・LLMプロバイダー・セッション管理 |
+| `docrank-mcp` | MCP HTTP サーバー + Swagger UI |
 | `docrank-spring-boot-starter` | Spring Boot 自動設定 |
-
-## ビルドとテスト
-
-```bash
-# 全モジュールのビルド
-mvn clean install -DskipTests
-
-# テスト実行（モデルファイル不要）
-mvn test -pl docrank-core
-```
-
-## 設定リファレンス
-
-```yaml
-docrank:
-  backend.lancedb:
-    host: localhost          # LanceDB ホスト
-    port: 8181               # LanceDB ポート
-    table-name: docrank_memories
-  embedding:
-    dimension: 1024          # BGE-M3 出力次元数
-    batch-size: 32           # Embedding バッチサイズ
-    onnx.model-path: /opt/docrank/models/bge-m3
-  reranker:
-    enabled: true
-    top-n: 20                # リランカーに渡す候補数
-    onnx.model-path: /opt/docrank/models/bge-reranker-v2-m3
-  lucene:
-    index-path: /opt/docrank/data/lucene-index
-    ram-buffer-mb: 64        # IndexWriter メモリバッファ（MB）
-  chunk:
-    size: 512                # CJK：文字数、英語：単語数
-    overlap: 64              # スライディングウィンドウ重複長
-  language:
-    default-lang: auto       # auto | zh | ja | en
-```
 
 ## ライセンス
 

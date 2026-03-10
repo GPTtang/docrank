@@ -1,11 +1,17 @@
 package com.memo.docrank.autoconfigure;
 
+import com.memo.docrank.agent.AgentService;
+import com.memo.docrank.agent.ClaudeProvider;
+import com.memo.docrank.agent.LlmProvider;
+import com.memo.docrank.agent.OpenAiProvider;
 import com.memo.docrank.core.analyzer.LanguageDetector;
 import com.memo.docrank.core.analyzer.MultiLingualAnalyzerFactory;
 import com.memo.docrank.core.chunking.ChunkingService;
 import com.memo.docrank.core.embedding.EmbeddingProvider;
 import com.memo.docrank.core.embedding.OnnxEmbeddingProvider;
+import com.memo.docrank.core.embedding.RandomEmbeddingProvider;
 import com.memo.docrank.core.ingest.ParserRegistry;
+import com.memo.docrank.core.rerank.NoOpReranker;
 import com.memo.docrank.core.rerank.OnnxReranker;
 import com.memo.docrank.core.rerank.Reranker;
 import com.memo.docrank.core.search.AdvancedScorer;
@@ -18,7 +24,6 @@ import com.memo.docrank.core.store.LanceDBBackend;
 import com.memo.docrank.core.store.PgvectorBackend;
 import com.memo.docrank.core.store.QdrantBackend;
 import com.memo.docrank.memory.KnowledgeBaseService;
-import com.memo.docrank.mcp.DocRankMcpServer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -29,7 +34,7 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(DocRankProperties.class)
 public class DocRankAutoConfiguration {
 
-    // ---------------------------------------------------------------- 向量存储后端（lancedb / qdrant / memory）
+    // ---------------------------------------------------------------- 向量存储后端
 
     @Bean
     public IndexBackend indexBackend(DocRankProperties props) {
@@ -51,14 +56,11 @@ public class DocRankAutoConfiguration {
                 DocRankProperties.BackendProps.PgvectorProps cfg = backend.getPgvector();
                 log.info("DocRank 向量后端: pgvector @ {}", cfg.getJdbcUrl());
                 yield new PgvectorBackend(
-                        cfg.getJdbcUrl(),
-                        cfg.getUsername(),
-                        cfg.getPassword(),
-                        cfg.getTableName(),
-                        props.getEmbedding().getDimension());
+                        cfg.getJdbcUrl(), cfg.getUsername(), cfg.getPassword(),
+                        cfg.getTableName(), props.getEmbedding().getDimension());
             }
             case "memory" -> {
-                log.warn("DocRank 向量后端: InMemory（仅用于测试，不持久化）");
+                log.warn("DocRank 向量后端: InMemory（仅演示，不持久化）");
                 InMemoryBackend mb = new InMemoryBackend();
                 mb.createIndex();
                 yield mb;
@@ -85,19 +87,28 @@ public class DocRankAutoConfiguration {
         return new LuceneBM25Index(indexPath);
     }
 
-    // ---------------------------------------------------------------- Embedding（BGE-M3）
+    // ---------------------------------------------------------------- Embedding（BGE-M3 或 Random）
 
     @Bean
     public EmbeddingProvider embeddingProvider(DocRankProperties props) {
-        String modelPath = props.getEmbedding().getOnnx().getModelPath();
+        DocRankProperties.EmbeddingProps ep = props.getEmbedding();
+        if ("random".equalsIgnoreCase(ep.getType())) {
+            log.warn("DocRank Embedding: 随机向量模式（仅演示用，无语义检索能力）");
+            return new RandomEmbeddingProvider(ep.getDimension());
+        }
+        String modelPath = ep.getOnnx().getModelPath();
         log.info("DocRank Embedding: BGE-M3 ONNX @ {}", modelPath);
-        return new OnnxEmbeddingProvider(modelPath, props.getEmbedding().getBatchSize());
+        return new OnnxEmbeddingProvider(modelPath, ep.getBatchSize());
     }
 
-    // ---------------------------------------------------------------- Reranker（bge-reranker-v2-m3）
+    // ---------------------------------------------------------------- Reranker（bge-reranker-v2-m3 或 NoOp）
 
     @Bean
     public Reranker reranker(DocRankProperties props) {
+        if (!props.getReranker().isEnabled()) {
+            log.warn("DocRank Reranker: 已禁用（NoOp）");
+            return new NoOpReranker();
+        }
         String modelPath = props.getReranker().getOnnx().getModelPath();
         log.info("DocRank Reranker: bge-reranker-v2-m3 ONNX @ {}", modelPath);
         return new OnnxReranker(modelPath);
@@ -127,10 +138,8 @@ public class DocRankAutoConfiguration {
     @Bean
     public ChunkingService chunkingService(DocRankProperties props,
                                            LanguageDetector languageDetector) {
-        return new ChunkingService(
-                languageDetector,
-                props.getChunk().getSize(),
-                props.getChunk().getOverlap());
+        return new ChunkingService(languageDetector,
+                props.getChunk().getSize(), props.getChunk().getOverlap());
     }
 
     // ---------------------------------------------------------------- 高级评分
@@ -169,10 +178,47 @@ public class DocRankAutoConfiguration {
                 props.getIngest().getDedupThreshold());
     }
 
-    // ---------------------------------------------------------------- MCP Server
+    // ---------------------------------------------------------------- AI Agent（可选）
 
     @Bean
-    public DocRankMcpServer docRankMcpServer(KnowledgeBaseService kb) {
-        return new DocRankMcpServer(kb);
+    public AgentService agentService(KnowledgeBaseService kb, DocRankProperties props) {
+        DocRankProperties.AgentProps agentProps = props.getAgent();
+        if (!agentProps.isEnabled()) {
+            log.info("DocRank Agent 未启用（设置 docrank.agent.enabled=true 开启）");
+            return null;
+        }
+
+        DocRankProperties.AgentProps.LlmProps llm = agentProps.getLlm();
+        LlmProvider provider = buildLlmProvider(llm);
+
+        log.info("DocRank Agent 已启用: provider={}, model={}", llm.getProvider(), llm.getModel());
+        return new AgentService(kb, provider,
+                agentProps.getContextTopK(),
+                agentProps.getMaxHistoryTurns(),
+                agentProps.getSystemPrompt());
+    }
+
+    private LlmProvider buildLlmProvider(DocRankProperties.AgentProps.LlmProps llm) {
+        String apiKey = resolveApiKey(llm);
+        return switch (llm.getProvider().toLowerCase()) {
+            case "openai" -> new OpenAiProvider(apiKey, llm.getModel(),
+                    llm.getMaxTokens(), llm.getTemperature(), llm.getBaseUrl());
+            default -> new ClaudeProvider(apiKey, llm.getModel(),
+                    llm.getMaxTokens(), llm.getTemperature(), llm.getBaseUrl());
+        };
+    }
+
+    private String resolveApiKey(DocRankProperties.AgentProps.LlmProps llm) {
+        if (llm.getApiKey() != null && !llm.getApiKey().isBlank()) {
+            return llm.getApiKey();
+        }
+        String envKey = "openai".equalsIgnoreCase(llm.getProvider())
+                ? System.getenv("OPENAI_API_KEY")
+                : System.getenv("ANTHROPIC_API_KEY");
+        if (envKey == null || envKey.isBlank()) {
+            log.warn("DocRank Agent: LLM API Key 未配置，调用 chat() 时将抛出异常。" +
+                    "请设置 docrank.agent.llm.api-key 或对应环境变量");
+        }
+        return envKey != null ? envKey : "";
     }
 }
