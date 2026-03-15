@@ -10,7 +10,7 @@
     <packaging>pom</packaging>
 
     <name>DocRank</name>
-    <description>Offline multilingual semantic memory search for AI Agents — Chinese &amp; Japanese support</description>
+    <description>Offline multilingual semantic memory search for AI Agents 閳?Chinese &amp; Japanese support</description>
 
     <modules>
         <module>docrank-core</module>
@@ -43,9 +43,9 @@
         <!-- Storage -->
         <arrow.version>16.1.0</arrow.version>
 
-        <!-- Adapters (provided — user brings their own) -->
+        <!-- Adapters (provided 閳?user brings their own) -->
         <langchain4j.version>0.36.2</langchain4j.version>
-        <spring-ai.version>1.0.0</spring-ai.version>
+        <spring-ai.version>1.0.0-M5</spring-ai.version>
 
         <!-- Test -->
         <junit.version>5.10.2</junit.version>
@@ -99,7 +99,7 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- DJL — inference engine abstraction -->
+            <!-- DJL 閳?inference engine abstraction -->
             <dependency>
                 <groupId>ai.djl</groupId>
                 <artifactId>api</artifactId>
@@ -116,7 +116,7 @@
                 <version>${djl.version}</version>
             </dependency>
 
-            <!-- ONNX Runtime (CPU) — activated by default -->
+            <!-- ONNX Runtime (CPU) 閳?activated by default -->
             <dependency>
                 <groupId>com.microsoft.onnxruntime</groupId>
                 <artifactId>onnxruntime</artifactId>
@@ -145,21 +145,21 @@
                 <version>${lucene.version}</version>
             </dependency>
 
-            <!-- HanLP — Chinese NLP (simplified + traditional) -->
+            <!-- HanLP 閳?Chinese NLP (simplified + traditional) -->
             <dependency>
                 <groupId>com.hankcs</groupId>
                 <artifactId>hanlp</artifactId>
                 <version>${hanlp.version}</version>
             </dependency>
 
-            <!-- Lingua — language detection -->
+            <!-- Lingua 閳?language detection -->
             <dependency>
                 <groupId>com.github.pemistahl</groupId>
                 <artifactId>lingua</artifactId>
                 <version>${lingua.version}</version>
             </dependency>
 
-            <!-- Apache Arrow — LanceDB data interchange -->
+            <!-- Apache Arrow 閳?LanceDB data interchange -->
             <dependency>
                 <groupId>org.apache.arrow</groupId>
                 <artifactId>arrow-vector</artifactId>

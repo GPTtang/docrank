@@ -25,7 +25,7 @@
             <artifactId>docrank-memory</artifactId>
         </dependency>
 
-        <!-- Spring AI — provided: user brings their own version -->
+        <!-- Spring AI 闁?provided: user brings their own version -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-core</artifactId>
@@ -48,15 +48,6 @@
         </dependency>
     </dependencies>
 
-    <repositories>
-        <repository>
-            <id>spring-releases</id>
-            <name>Spring Releases</name>
-            <url>https://repo.spring.io/release</url>
-            <snapshots><enabled>false</enabled></snapshots>
-        </repository>
-    </repositories>
-
     <build>
         <plugins>
             <plugin>
@@ -77,3 +68,4 @@
         </plugins>
     </build>
 </project>
+

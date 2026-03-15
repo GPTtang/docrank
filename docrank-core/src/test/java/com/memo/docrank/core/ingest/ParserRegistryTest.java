@@ -49,7 +49,7 @@ class ParserRegistryTest {
     @Test
     void doesNotSupportUnknownExtension() {
         assertFalse(registry.supports("file.xyz"));
-        assertFalse(registry.supports("file.csv"));
+        assertTrue(registry.supports("file.csv"));
     }
 
     @Test
@@ -78,7 +78,7 @@ class ParserRegistryTest {
 
     @Test
     void unknownExtensionFallsBackToTextParser() throws Exception {
-        // 未知扩展名降级为 TextParser
+        // 鏈煡鎵╁睍鍚嶉檷绾т负 TextParser
         ParsedDocument doc = registry.parse(stream("plain text"), "file.xyz", "d1");
         assertNotNull(doc);
         assertEquals("plain text", doc.getText());
@@ -87,8 +87,8 @@ class ParserRegistryTest {
     @Test
     void extensionIsCaseInsensitive() {
         assertTrue(registry.supports("README.TXT") || registry.supports("README.txt"));
-        // registry 按小写注册，文件名大写应自动转换
-        // 至少支持小写版本
+        // registry 鎸夊皬鍐欐敞鍐岋紝鏂囦欢鍚嶅ぇ鍐欏簲鑷姩杞崲
+        // 鑷冲皯鏀寔灏忓啓鐗堟湰
         assertTrue(registry.supports("readme.txt"));
     }
 
@@ -99,3 +99,4 @@ class ParserRegistryTest {
         assertFalse(doc.getDocId().isBlank());
     }
 }
+

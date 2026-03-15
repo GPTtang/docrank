@@ -2,6 +2,7 @@ package com.memo.docrank.core.store;
 
 import com.memo.docrank.core.model.Chunk;
 import com.memo.docrank.core.model.ChunkWithVectors;
+import com.memo.docrank.core.model.Language;
 import com.memo.docrank.core.model.RecallCandidate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,7 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InMemoryBackendTest {
 
@@ -22,14 +24,18 @@ class InMemoryBackendTest {
         backend.createIndex();
     }
 
-    private ChunkWithVectors makeChunk(String chunkId, String docId,
-                                        String text, float[] vec) {
+    private ChunkWithVectors makeChunk(String chunkId, String docId, String text, float[] vec, String... tags) {
         Chunk chunk = Chunk.builder()
-                .chunkId(chunkId).docId(docId)
+                .chunkId(chunkId)
+                .docId(docId)
                 .chunkText(text)
+                .language(Language.ENGLISH)
+                .tags(tags != null ? List.of(tags) : List.of())
                 .build();
         List<Float> vecList = new ArrayList<>();
-        for (float v : vec) vecList.add(v);
+        for (float v : vec) {
+            vecList.add(v);
+        }
         return ChunkWithVectors.builder().chunk(chunk).vecChunk(vecList).build();
     }
 
@@ -72,17 +78,43 @@ class InMemoryBackendTest {
     }
 
     @Test
+    void keywordSearch_appliesDocIdFilter() {
+        backend.upsertChunks(List.of(
+                makeChunk("c1", "doc-a", "spring boot tutorial", new float[]{1f, 0f}),
+                makeChunk("c2", "doc-b", "spring cloud tutorial", new float[]{0.9f, 0.1f})
+        ));
+
+        List<RecallCandidate> results = backend.keywordSearch("spring", 10, Map.of("doc_id", "doc-a"));
+
+        assertEquals(1, results.size());
+        assertEquals("doc-a", results.get(0).getChunk().getDocId());
+    }
+
+    @Test
     void vectorSearch_ranksByCosineSimilarity() {
-        // c1 is aligned with query [1,0], c2 is orthogonal
         backend.upsertChunks(List.of(
                 makeChunk("c1", "d1", "text1", new float[]{1f, 0f}),
                 makeChunk("c2", "d2", "text2", new float[]{0f, 1f})
         ));
-        List<RecallCandidate> results = backend.vectorSearch(
-                new float[]{1f, 0f}, 10, Map.of());
+
+        List<RecallCandidate> results = backend.vectorSearch(new float[]{1f, 0f}, 10, Map.of());
+
         assertEquals(2, results.size());
         assertEquals("c1", results.get(0).getChunk().getChunkId());
         assertTrue(results.get(0).getScore() > results.get(1).getScore());
+    }
+
+    @Test
+    void vectorSearch_appliesTagsFilter() {
+        backend.upsertChunks(List.of(
+                makeChunk("c1", "d1", "java text", new float[]{1f, 0f}, "java", "spring"),
+                makeChunk("c2", "d2", "ops text", new float[]{1f, 0f}, "ops")
+        ));
+
+        List<RecallCandidate> results = backend.vectorSearch(new float[]{1f, 0f}, 10, Map.of("tags", List.of("java")));
+
+        assertEquals(1, results.size());
+        assertEquals("c1", results.get(0).getChunk().getChunkId());
     }
 
     @Test

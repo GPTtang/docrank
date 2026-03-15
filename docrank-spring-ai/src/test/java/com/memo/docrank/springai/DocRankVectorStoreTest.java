@@ -4,10 +4,10 @@ import com.memo.docrank.core.store.InMemoryBackend;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
-import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.vectorstore.SearchRequest;
 
 import java.util.ArrayList;
@@ -15,42 +15,55 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DocRankVectorStoreTest {
 
     private DocRankVectorStore store;
-    private InMemoryBackend    backend;
+    private InMemoryBackend backend;
 
-    /** Stub EmbeddingModel: encodes by hashing text to a 3-dim float[] */
     static class StubEmbeddingModel implements EmbeddingModel {
         @Override
         public EmbeddingResponse call(EmbeddingRequest request) {
             List<Embedding> list = new ArrayList<>();
             List<String> texts = request.getInstructions();
             for (int i = 0; i < texts.size(); i++) {
-                list.add(new Embedding(toDoubles(encode(texts.get(i))), i));
+                list.add(new Embedding(encode(texts.get(i)), i));
             }
             return new EmbeddingResponse(list);
         }
 
         @Override
-        public List<Double> embed(String text) {
-            return toDoubles(encode(text));
+        public float[] embed(Document document) {
+            return encode(document.getFormattedContent());
         }
 
         @Override
-        public int dimensions() { return 3; }
+        public float[] embed(String text) {
+            return encode(text);
+        }
+
+        @Override
+        public List<float[]> embed(List<String> texts) {
+            List<float[]> out = new ArrayList<>(texts.size());
+            for (String t : texts) {
+                out.add(encode(t));
+            }
+            return out;
+        }
+
+        @Override
+        public int dimensions() {
+            return 3;
+        }
 
         private float[] encode(String text) {
             int h = text.hashCode();
             return new float[]{(h & 0xFF) / 255f, ((h >> 8) & 0xFF) / 255f, ((h >> 16) & 0xFF) / 255f};
-        }
-
-        private List<Double> toDoubles(float[] arr) {
-            List<Double> list = new ArrayList<>(arr.length);
-            for (float v : arr) list.add((double) v);
-            return list;
         }
     }
 
@@ -68,7 +81,7 @@ class DocRankVectorStoreTest {
     void add_storesDocuments() {
         store.add(List.of(
                 new Document("Spring Boot tutorial", Map.of("title", "Spring")),
-                new Document("Kubernetes guide",     Map.of("title", "K8s"))
+                new Document("Kubernetes guide", Map.of("title", "K8s"))
         ));
         assertEquals(2, backend.countChunks());
     }
@@ -94,7 +107,7 @@ class DocRankVectorStoreTest {
     void similaritySearch_returnsResults() {
         store.add(List.of(
                 new Document("machine learning algorithms", Map.of()),
-                new Document("cooking recipes for dinner",  Map.of())
+                new Document("cooking recipes for dinner", Map.of())
         ));
 
         SearchRequest request = SearchRequest.builder()
@@ -105,6 +118,30 @@ class DocRankVectorStoreTest {
 
         List<Document> results = store.similaritySearch(request);
         assertFalse(results.isEmpty());
+    }
+
+    @Test
+    void similaritySearch_exposesDeleteId() {
+        store.add(List.of(new Document("machine learning algorithms", Map.of())));
+
+        SearchRequest request = SearchRequest.builder()
+                .query("machine learning")
+                .topK(1)
+                .similarityThreshold(0.0)
+                .build();
+
+        List<Document> results = store.similaritySearch(request);
+        assertFalse(results.isEmpty());
+
+        Document first = results.get(0);
+        String deleteId = first.getId();
+        if (deleteId == null || deleteId.isBlank()) {
+            Object fromMeta = first.getMetadata().get("delete_id");
+            deleteId = fromMeta != null ? fromMeta.toString() : null;
+        }
+
+        assertNotNull(deleteId);
+        assertFalse(deleteId.isBlank());
     }
 
     @Test
@@ -123,8 +160,7 @@ class DocRankVectorStoreTest {
 
     @Test
     void add_preservesMetadata() {
-        Document doc = new Document("Spring AI vector store",
-                Map.of("title", "Spring AI Guide"));
+        Document doc = new Document("Spring AI vector store", Map.of("title", "Spring AI Guide"));
         store.add(List.of(doc));
 
         SearchRequest request = SearchRequest.builder()
@@ -134,7 +170,6 @@ class DocRankVectorStoreTest {
                 .build();
         List<Document> results = store.similaritySearch(request);
         assertFalse(results.isEmpty());
-        // The result document should have a title in metadata
         assertNotNull(results.get(0).getMetadata().get("title"));
     }
 
